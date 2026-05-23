@@ -36,4 +36,10 @@ class AppStrings {
   String get buyCoins => pick(en: 'Buy coins', ar: 'شراء رصيد', fr: 'Acheter des crédits');
   String get unlimitedPremium => pick(en: 'Premium unlocks unlimited fixes.', ar: 'النسخة الكاملة تفتح الإصلاح بدون حدود.', fr: 'Premium débloque les corrections illimitées.');
   String get activationHint => pick(en: 'Enable the keyboard from Android input settings, then choose it while typing.', ar: 'فعّل لوحة المفاتيح من إعدادات الإدخال في Android، ثم اخترها أثناء الكتابة.', fr: 'Activez le clavier dans les paramètres Android, puis choisissez-le lors de l’écriture.');
+  String get activationStepOneTitle => pick(en: 'Step 1', ar: 'الخطوة 1', fr: 'Étape 1');
+  String get activationStepOneBody => pick(en: 'Open Android keyboard settings and enable Fix Arabic Keyboard.', ar: 'افتح إعدادات لوحات المفاتيح في Android وفعّل لوحة Fix Arabic.', fr: 'Ouvrez les paramètres du clavier Android et activez Fix Arabic Keyboard.');
+  String get activationStepTwoTitle => pick(en: 'Step 2', ar: 'الخطوة 2', fr: 'Étape 2');
+  String get activationStepTwoBody => pick(en: 'Choose Fix Arabic Keyboard as the current keyboard while typing.', ar: 'اختر لوحة Fix Arabic كلوحة المفاتيح الحالية أثناء الكتابة.', fr: 'Choisissez Fix Arabic Keyboard comme clavier actif lors de l’écriture.');
+  String get openKeyboardSettings => pick(en: 'Open keyboard settings', ar: 'فتح إعدادات لوحة المفاتيح', fr: 'Ouvrir les paramètres du clavier');
+  String get chooseKeyboard => pick(en: 'Choose keyboard', ar: 'اختيار لوحة المفاتيح', fr: 'Choisir le clavier');
 }
