@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Fix Arabic Keyboard</string>
+    <string name="ime_name">Fix Arabic Keyboard</string>
+    <string name="ime_subtype_ar">Arabic</string>
+</resources>
