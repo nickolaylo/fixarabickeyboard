@@ -42,4 +42,9 @@ class AppStrings {
   String get activationStepTwoBody => pick(en: 'Choose Fix Arabic Keyboard as the current keyboard while typing.', ar: 'اختر لوحة Fix Arabic كلوحة المفاتيح الحالية أثناء الكتابة.', fr: 'Choisissez Fix Arabic Keyboard comme clavier actif lors de l’écriture.');
   String get openKeyboardSettings => pick(en: 'Open keyboard settings', ar: 'فتح إعدادات لوحة المفاتيح', fr: 'Ouvrir les paramètres du clavier');
   String get chooseKeyboard => pick(en: 'Choose keyboard', ar: 'اختيار لوحة المفاتيح', fr: 'Choisir le clavier');
+  String get keyboardTestTitle => pick(en: 'Keyboard test', ar: 'اختبار لوحة المفاتيح', fr: 'Test du clavier');
+  String get keyboardTestBody => pick(en: 'Use this box to test the keyboard without opening another app.', ar: 'استعمل هذا المربع لتجربة لوحة المفاتيح بدون فتح تطبيق آخر.', fr: 'Utilisez cette zone pour tester le clavier sans ouvrir une autre application.');
+  String get keyboardTestHint => pick(en: 'Test typing here...', ar: 'جرّب الكتابة هنا...', fr: 'Testez l’écriture ici...');
+  String get chooseKeyboardForTest => pick(en: 'Choose keyboard for test', ar: 'اختيار لوحة المفاتيح للتجربة', fr: 'Choisir le clavier pour le test');
 }
+

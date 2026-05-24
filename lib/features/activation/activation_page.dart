@@ -52,6 +52,30 @@ class ActivationPage extends StatelessWidget {
             onPressed: _chooseKeyboard,
             child: Text(strings.chooseKeyboard),
           ),
+          const SizedBox(height: 20),
+          AppSectionCard(
+            icon: Icons.edit_note_outlined,
+            title: strings.keyboardTestTitle,
+            body: strings.keyboardTestBody,
+            trailing: const Icon(Icons.keyboard_outlined),
+            onTap: _chooseKeyboard,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            minLines: 3,
+            maxLines: 5,
+            textAlign: strings.isArabic ? TextAlign.right : TextAlign.left,
+            decoration: InputDecoration(
+              hintText: strings.keyboardTestHint,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _chooseKeyboard,
+            icon: const Icon(Icons.keyboard_alt_outlined),
+            label: Text(strings.chooseKeyboardForTest),
+          ),
         ],
       ),
     );
