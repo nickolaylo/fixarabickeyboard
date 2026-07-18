@@ -43,6 +43,11 @@ class KeyboardImeService : InputMethodService() {
     private var shiftState: ShiftState = ShiftState.OFF
     private var lastRepairSlotHeight: Int = 0
     private var stableTopArea: FrameLayout? = null
+    private var smartTopSlotView: View? = null
+    private var repairTopSlotView: View? = null
+    private var repairRowContainer: FrameLayout? = null
+    private var keyboardRoot: FrameLayout? = null
+    private var repairOverlayView: View? = null
     private val deleteRepeatHandler = Handler(Looper.getMainLooper())
     private var deleteRepeatRunnable: Runnable? = null
 
@@ -56,20 +61,39 @@ class KeyboardImeService : InputMethodService() {
     }
 
     override fun onCreateInputView(): View {
-        val root = LinearLayout(this).apply {
+        // Patch 04: build the keyboard from the bottom upward.
+        // The key area stays anchored to the bottom while optional rows above it change.
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(KeyboardColors.background)
+            clipChildren = false
+            clipToPadding = false
+        }
+        keyboardRoot = root
+        repairOverlayView = null
+
+        val keyboardStack = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(6), dp(8), dp(6))
             setBackgroundColor(KeyboardColors.background)
+            clipChildren = false
+            clipToPadding = false
         }
 
-        // Stable reserved top area: toggling the arrow or wand changes rows inside this area
-        // without changing the total keyboard height.
-        root.addView(makeStableTopArea())
-        root.addView(makeNumberRow())
+        keyboardStack.addView(makeStableTopArea())
+        keyboardStack.addView(makeNumberRow())
         activeRows().forEachIndexed { index, row ->
-            root.addView(makeLetterRow(row, showBackspace = index == 2))
+            keyboardStack.addView(makeLetterRow(row, showBackspace = index == 2))
         }
-        root.addView(makeBottomRow())
+        keyboardStack.addView(makeBottomRow())
+
+        root.addView(
+            keyboardStack,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM
+            )
+        )
         updateSuggestions()
         return root
     }
@@ -91,42 +115,77 @@ class KeyboardImeService : InputMethodService() {
         lastDictionaryVisible = sourceText.isNotBlank()
         lastSmartRowMode = smartMode
 
-        val repairSlotHeight = currentRepairSlotHeight()
-        lastRepairSlotHeight = repairSlotHeight
         val smartSlotHeight = dp(49)
         return FrameLayout(this).apply {
             stableTopArea = this
-            // No empty repair background is reserved while correction mode is off.
-            // The smart row always stays directly above the keys.
+            setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = false
+            clipToPadding = false
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                repairSlotHeight + smartSlotHeight
+                smartSlotHeight
             )
+
+            // Patch 09: a real fixed TopSlot.
+            // Smart row and repair row are children of the same FrameLayout,
+            // so they overlap in the same coordinates instead of stacking vertically.
+            val smartContent = makeSmartRow(smartMode, CorrectionEngine.suggestions(sourceText))
+            smartTopSlotView = smartContent
+            addView(
+                smartContent,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    smartSlotHeight,
+                    Gravity.TOP
+                )
+            )
+
+            val repairContent = makeRepairInputRow()
+            repairTopSlotView = repairContent
+            // Patch 10: RepairRow and SmartRow must share the exact same TopSlot height.
+            // Do not let the repair row be taller than the slot here; otherwise it looks
+            // like a stacked row above the keyboard instead of replacing the smart row.
+            addView(
+                repairContent,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    Gravity.TOP
+                )
+            )
+
+            applyTopSlotState(animated = false)
+        }
+    }
+
+    private fun makeRepairSlot(repairSlotHeight: Int): FrameLayout {
+        return FrameLayout(this).apply {
+            repairRowContainer = this
+            setBackgroundColor(Color.TRANSPARENT)
+            isClickable = repairExpanded
+            isFocusable = repairExpanded
+            isEnabled = repairExpanded
+            visibility = if (repairExpanded) View.VISIBLE else View.INVISIBLE
+            alpha = if (repairExpanded) 1f else 0f
             if (repairExpanded) {
                 addView(
                     makeRepairInputRow(),
                     FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         repairSlotHeight
-                    ).apply { topMargin = 0 }
+                    )
                 )
             }
-            addView(
-                makeSmartRow(smartMode, CorrectionEngine.suggestions(sourceText)),
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    smartSlotHeight
-                ).apply { topMargin = repairSlotHeight }
-            )
         }
     }
 
     private fun currentRepairSlotHeight(): Int {
         val minimumRepairSlotHeight = dp(58)
         if (!repairExpanded) {
-            // Keep the top area height stable when the wand toggles correction on/off.
-            // This avoids the visible IME jump caused by changing the keyboard total height.
-            return lastRepairSlotHeight.coerceAtLeast(minimumRepairSlotHeight)
+            // Patch 05: keep the physical slot height reserved even while the repair row is hidden.
+            // This prevents the IME window from changing height when the wand is toggled.
+            // The repair view itself is not drawn, so no repair panel/background is visible.
+            return minimumRepairSlotHeight
         }
         return repairSlotHeightForText(repairBuffer).coerceAtLeast(minimumRepairSlotHeight)
     }
@@ -185,34 +244,37 @@ class KeyboardImeService : InputMethodService() {
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.BOTTOM
-            setPadding(0, dp(5), 0, dp(5))
+            gravity = Gravity.CENTER_VERTICAL
+            // Patch 11: RepairRow is the visual replacement of SmartRow inside the same TopSlot.
+            // Give it an opaque panel background so the SmartRow/icons never show through behind it.
+            setPadding(0, dp(2), 0, dp(3))
+            background = roundedStrokeBackground(KeyboardColors.panel, KeyboardColors.repairStroke, dp(9), dp(1))
+            clipChildren = false
+            clipToPadding = false
             addView(
                 sendButton,
-                LinearLayout.LayoutParams(dp(44), dp(44)).apply { setMargins(0, 0, dp(5), 0) }
+                LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(0, 0, dp(4), 0) }
             )
-            addView(repairEditText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+            addView(repairEditText, LinearLayout.LayoutParams(0, dp(44), 1f))
+            addView(
+                makeIconButton(R.drawable.ic_keyboard_magic_wand, KeyboardColors.repairActive) { toggleRepairExpanded() },
+                LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(dp(4), 0, 0, 0) }
+            )
         }
     }
 
     private fun resizeRepairSlot(nextHeight: Int) {
-        val topArea = stableTopArea ?: return
-        val smartSlotHeight = dp(49)
+        // Patch 10: while the repair UI lives inside the fixed TopSlot, resizing it would
+        // recreate the old stacked-row/jump problem. Keep the slot fixed and only remember
+        // the requested height for future full-panel work.
         lastRepairSlotHeight = nextHeight
-        topArea.layoutParams = topArea.layoutParams.apply {
-            height = nextHeight + smartSlotHeight
-        }
-        if (topArea.childCount >= 2) {
-            val repairView = topArea.getChildAt(0)
+        if (repairOverlayView != null) {
+            val repairView = repairOverlayView ?: return
             repairView.layoutParams = repairView.layoutParams.apply {
                 height = nextHeight
             }
-            val smartView = topArea.getChildAt(1)
-            val smartParams = smartView.layoutParams as FrameLayout.LayoutParams
-            smartParams.topMargin = nextHeight
-            smartView.layoutParams = smartParams
+            repairView.requestLayout()
         }
-        topArea.requestLayout()
     }
 
     private fun makeSmartRow(mode: SmartRowMode, suggestions: List<String>): LinearLayout {
@@ -648,54 +710,150 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun toggleRepairExpanded() {
-        repairExpanded = !repairExpanded
         if (repairExpanded) {
             repairBuffer = repairEditText?.text?.toString() ?: repairBuffer
         }
+        repairExpanded = !repairExpanded
         prefs.edit()
             .putBoolean("repair_expanded", repairExpanded)
             .putBoolean("tools_expanded", toolsExpanded)
             .apply()
+
+        // Patch 08: do not add a separate repair overlay above the smart row.
+        // Refresh only the stable top slot so repair replaces icons/suggestions.
         refreshStableTopAreaOnly()
     }
 
+    private fun showRepairOverlay(animated: Boolean) {
+        val root = keyboardRoot ?: return
+        repairOverlayView?.let { root.removeView(it) }
+        val overlay = makeRepairOverlay()
+        repairOverlayView = overlay
+        root.addView(
+            overlay,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                currentRepairSlotHeight(),
+                Gravity.TOP
+            ).apply {
+                leftMargin = dp(8)
+                rightMargin = dp(8)
+                topMargin = dp(6)
+            }
+        )
+        if (animated) {
+            overlay.alpha = 0f
+            overlay.translationY = -dp(10).toFloat()
+            overlay.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(150)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        } else {
+            overlay.alpha = 1f
+            overlay.translationY = 0f
+        }
+    }
 
+    private fun hideRepairOverlay(animated: Boolean) {
+        val root = keyboardRoot ?: return
+        val overlay = repairOverlayView ?: return
+        repairBuffer = repairEditText?.text?.toString() ?: repairBuffer
+        val removeAction = {
+            if (repairOverlayView === overlay) {
+                root.removeView(overlay)
+                repairOverlayView = null
+                repairEditText = null
+            }
+        }
+        if (animated) {
+            overlay.animate()
+                .alpha(0f)
+                .translationY(-dp(10).toFloat())
+                .setDuration(120)
+                .withEndAction { removeAction() }
+                .start()
+        } else {
+            removeAction()
+        }
+    }
+
+    private fun makeRepairOverlay(): FrameLayout {
+        return FrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isClickable = false
+            isFocusable = false
+            clipChildren = false
+            clipToPadding = false
+            addView(
+                makeRepairInputRow(),
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+        }
+    }
 
     private fun refreshStableTopAreaOnly() {
         val topArea = stableTopArea ?: return
         val sourceText = currentSuggestionSource()
         val smartMode = smartRowMode(sourceText)
-        val repairSlotHeight = currentRepairSlotHeight()
         val smartSlotHeight = dp(49)
 
-        lastRepairSlotHeight = repairSlotHeight
         lastDictionaryVisible = sourceText.isNotBlank()
         lastSmartRowMode = smartMode
 
-        topArea.removeAllViews()
-        topArea.layoutParams = topArea.layoutParams.apply {
-            height = repairSlotHeight + smartSlotHeight
-        }
-
-        if (repairExpanded) {
-            topArea.addView(
-                makeRepairInputRow(),
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    repairSlotHeight
-                ).apply { topMargin = 0 }
-            )
-        }
-
+        // Patch 09: keep the TopSlot fixed and never add a second vertical row.
+        // Only rebuild the smart child when its content changes; the repair child
+        // stays in the same FrameLayout coordinate space.
+        val oldSmart = smartTopSlotView
+        if (oldSmart != null) topArea.removeView(oldSmart)
+        val smartContent = makeSmartRow(smartMode, CorrectionEngine.suggestions(sourceText))
+        smartTopSlotView = smartContent
         topArea.addView(
-            makeSmartRow(smartMode, CorrectionEngine.suggestions(sourceText)),
+            smartContent,
+            0,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                smartSlotHeight
-            ).apply { topMargin = repairSlotHeight }
+                smartSlotHeight,
+                Gravity.TOP
+            )
         )
-        topArea.requestLayout()
+
+        repairTopSlotView?.bringToFront()
+        applyTopSlotState(animated = true)
     }
+
+    private fun applyTopSlotState(animated: Boolean) {
+        val smart = smartTopSlotView
+        val repair = repairTopSlotView
+        if (smart == null || repair == null) return
+
+        smart.animate().cancel()
+        repair.animate().cancel()
+
+        // Patch 11: true TopSlot swap.
+        // Do not crossfade both rows together, because the transparent parts can make
+        // the icon row appear under the repair row. One child is visible, the other
+        // is invisible inside the same FrameLayout slot.
+        if (repairExpanded) {
+            smart.alpha = 0f
+            smart.visibility = View.INVISIBLE
+            repair.bringToFront()
+            repair.visibility = View.VISIBLE
+            repair.alpha = 1f
+        } else {
+            repair.alpha = 0f
+            repair.visibility = View.INVISIBLE
+            smart.bringToFront()
+            smart.visibility = View.VISIBLE
+            smart.alpha = 1f
+        }
+    }
+
+
 
     private fun openAppSettings() {
         val intent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent()
