@@ -1,0 +1,7 @@
+Arabic dictionary source: AyaSpell Arabic Dictionary for Hunspell
+Source project: linuxscout/ayaspell
+Source revision: 36a90abb22c5033be58e709c8980160e0ce6c88c
+
+The bundled ar.txt file is a derived, normalized and de-duplicated word list.
+The original project is distributed under a GPL/LGPL/MPL tri-license.
+The accompanying license and author notices are preserved in this directory.

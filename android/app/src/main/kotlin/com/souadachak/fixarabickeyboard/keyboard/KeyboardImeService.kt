@@ -29,6 +29,7 @@ import com.souadachak.fixarabickeyboard.R
 
 class KeyboardImeService : InputMethodService() {
     private lateinit var coinManager: CoinManager
+    private lateinit var dictionaryManager: DictionaryManager
     private val typedText = StringBuilder()
     private var keyboardMode: KeyboardMode = KeyboardMode.ARABIC
     private var lastLetterMode: KeyboardMode = KeyboardMode.ARABIC
@@ -56,6 +57,8 @@ class KeyboardImeService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         coinManager = CoinManager(this)
+        dictionaryManager = DictionaryManager(this)
+        dictionaryManager.preload(DictionaryLanguage.ARABIC)
         toolsExpanded = prefs.getBoolean("tools_expanded", true)
         repairExpanded = prefs.getBoolean("repair_expanded", false)
     }
@@ -129,7 +132,7 @@ class KeyboardImeService : InputMethodService() {
             // Patch 09: a real fixed TopSlot.
             // Smart row and repair row are children of the same FrameLayout,
             // so they overlap in the same coordinates instead of stacking vertically.
-            val smartContent = makeSmartRow(smartMode, CorrectionEngine.suggestions(sourceText))
+            val smartContent = makeSmartRow(smartMode, dictionarySuggestions(sourceText))
             smartTopSlotView = smartContent
             addView(
                 smartContent,
@@ -322,7 +325,7 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun LinearLayout.addDictionaryContentToSmartRow(suggestions: List<String>) {
-        val visibleSuggestions = (if (suggestions.isEmpty()) defaultSuggestions() else suggestions).take(3)
+        val visibleSuggestions = suggestions.take(3)
         visibleSuggestions.forEach { word ->
             addView(
                 makeSuggestionKey(word) { commitSuggestion(word) },
@@ -810,7 +813,7 @@ class KeyboardImeService : InputMethodService() {
         // stays in the same FrameLayout coordinate space.
         val oldSmart = smartTopSlotView
         if (oldSmart != null) topArea.removeView(oldSmart)
-        val smartContent = makeSmartRow(smartMode, CorrectionEngine.suggestions(sourceText))
+        val smartContent = makeSmartRow(smartMode, dictionarySuggestions(sourceText))
         smartTopSlotView = smartContent
         topArea.addView(
             smartContent,
@@ -1009,7 +1012,7 @@ class KeyboardImeService : InputMethodService() {
         // for every character. This keeps writing stable and removes the visible lag.
         if (repairExpanded && repairEditText != null) {
             if (smartMode == SmartRowMode.DICTIONARY) {
-                rebuildDictionaryContent(CorrectionEngine.suggestions(source))
+                rebuildDictionaryContent(dictionarySuggestions(source))
             }
             lastDictionaryVisible = shouldShowDictionary
             lastSmartRowMode = smartMode
@@ -1022,7 +1025,22 @@ class KeyboardImeService : InputMethodService() {
         }
         lastDictionaryVisible = shouldShowDictionary
         if (smartMode == SmartRowMode.DICTIONARY) {
-            rebuildDictionaryContent(CorrectionEngine.suggestions(source))
+            rebuildDictionaryContent(dictionarySuggestions(source))
+        }
+    }
+
+    private fun dictionarySuggestions(source: String): List<String> {
+        if (source.isBlank()) return defaultSuggestions()
+
+        return when (lastLetterMode) {
+            KeyboardMode.ARABIC -> dictionaryManager.suggestions(
+                input = source,
+                language = DictionaryLanguage.ARABIC,
+                limit = 3
+            )
+            KeyboardMode.ENGLISH,
+            KeyboardMode.FRENCH -> CorrectionEngine.suggestions(source)
+            else -> emptyList()
         }
     }
 
