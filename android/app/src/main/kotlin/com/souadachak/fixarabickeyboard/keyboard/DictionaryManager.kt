@@ -1,6 +1,7 @@
 package com.souadachak.fixarabickeyboard.keyboard
 
 import android.content.Context
+import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.util.LinkedHashMap
 import java.util.zip.GZIPInputStream
@@ -149,22 +150,54 @@ class DictionaryManager(context: Context) {
     private fun bucketFor(language: DictionaryLanguage, fileName: String): IndexedBucket? {
         val cacheKey = "${language.code}/$fileName"
         bucketCache[cacheKey]?.let { return it }
-        val loaded = runCatching {
-            assets.open("dictionaries/${language.code}/$fileName").use { raw ->
-                GZIPInputStream(raw).use { gzip ->
-                    val output = ByteArrayOutputStream()
-                    val buffer = ByteArray(16 * 1024)
-                    while (true) {
-                        val count = gzip.read(buffer)
-                        if (count <= 0) break
-                        output.write(buffer, 0, count)
-                    }
-                    IndexedBucket(output.toByteArray())
-                }
-            }
-        }.getOrNull()
+
+        // Android's asset packager may transparently unpack *.gz files and
+        // expose them without the .gz suffix inside the APK. The index keeps
+        // the source filename, so resolve both packaged forms centrally for
+        // every current and future dictionary language.
+        val basePath = "dictionaries/${language.code}/"
+        val candidateNames = buildList {
+            add(fileName)
+            if (fileName.endsWith(".gz")) add(fileName.removeSuffix(".gz"))
+        }
+
+        var loaded: IndexedBucket? = null
+        for (candidateName in candidateNames) {
+            val bytes = runCatching {
+                readPossiblyGzippedAsset(basePath + candidateName)
+            }.getOrNull() ?: continue
+            loaded = IndexedBucket(bytes)
+            break
+        }
+
         if (loaded != null) bucketCache[cacheKey] = loaded
         return loaded
+    }
+
+    private fun readPossiblyGzippedAsset(path: String): ByteArray {
+        return assets.open(path).use { raw ->
+            BufferedInputStream(raw, 16 * 1024).use { buffered ->
+                buffered.mark(2)
+                val first = buffered.read()
+                val second = buffered.read()
+                buffered.reset()
+
+                val input = if (first == GZIP_MAGIC_FIRST && second == GZIP_MAGIC_SECOND) {
+                    GZIPInputStream(buffered)
+                } else {
+                    buffered
+                }
+
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(16 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count <= 0) break
+                    output.write(buffer, 0, count)
+                }
+                output.toByteArray()
+            }
+        }
     }
 
     private fun isTokenCharacter(char: Char, language: DictionaryLanguage): Boolean {
@@ -248,5 +281,7 @@ class DictionaryManager(context: Context) {
 
     companion object {
         private const val MAX_CACHED_BUCKETS = 2
+        private const val GZIP_MAGIC_FIRST = 0x1F
+        private const val GZIP_MAGIC_SECOND = 0x8B
     }
 }
