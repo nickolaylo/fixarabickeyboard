@@ -53,6 +53,10 @@ class KeyboardImeService : InputMethodService() {
     private val deleteRepeatHandler = Handler(Looper.getMainLooper())
     private var deleteRepeatRunnable: Runnable? = null
 
+    private companion object {
+        const val SUGGESTION_CONTEXT_LIMIT = 160
+    }
+
     private val prefs by lazy { getSharedPreferences("keyboard_ui_state", Context.MODE_PRIVATE) }
 
     override fun onCreate() {
@@ -105,12 +109,18 @@ class KeyboardImeService : InputMethodService() {
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         activeEditorInfo = attribute
-        typedText.clear()
-        repairBuffer = ""
-        repairEditText?.setText("")
-        lastDictionaryVisible = false
-        toolsExpanded = true
-        lastSmartRowMode = SmartRowMode.TOOLS
+
+        if (!restarting) {
+            typedText.clear()
+            repairBuffer = ""
+            repairEditText?.setText("")
+            lastDictionaryVisible = false
+            toolsExpanded = true
+            lastSmartRowMode = SmartRowMode.TOOLS
+        } else if (!repairExpanded) {
+            syncTypedTextFromEditor()
+        }
+
         updateSuggestions()
     }
 
@@ -1071,10 +1081,35 @@ class KeyboardImeService : InputMethodService() {
             return repairEditText?.text?.toString() ?: repairBuffer
         }
         val beforeCursor = currentInputConnection
-            ?.getTextBeforeCursor(80, 0)
+            ?.getTextBeforeCursor(SUGGESTION_CONTEXT_LIMIT, 0)
             ?.toString()
             .orEmpty()
-        return beforeCursor.ifBlank { typedText.toString() }
+        val trackedText = typedText.toString()
+
+        val resolved = when {
+            beforeCursor.isEmpty() -> trackedText
+            trackedText.isEmpty() -> beforeCursor
+            beforeCursor.endsWith(trackedText) -> beforeCursor
+            beforeCursor.length < trackedText.length -> trackedText
+            else -> beforeCursor
+        }
+
+        if (resolved == beforeCursor && beforeCursor.isNotEmpty()) {
+            typedText.clear()
+            typedText.append(beforeCursor)
+        }
+        return resolved
+    }
+
+    private fun syncTypedTextFromEditor() {
+        val beforeCursor = currentInputConnection
+            ?.getTextBeforeCursor(SUGGESTION_CONTEXT_LIMIT, 0)
+            ?.toString()
+            .orEmpty()
+        if (beforeCursor.isNotEmpty()) {
+            typedText.clear()
+            typedText.append(beforeCursor)
+        }
     }
 
     private fun clipboardText(): String {

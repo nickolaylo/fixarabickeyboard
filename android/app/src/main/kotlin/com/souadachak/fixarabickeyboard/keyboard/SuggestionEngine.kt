@@ -26,6 +26,7 @@ class SuggestionEngine(context: Context) {
         if (EditorPrivacy.isPasswordOrNumeric(editorInfo)) return emptyList()
 
         emailSuggestions(input)?.let { return it }
+        if ('@' in input.takeLastWhile { !it.isWhitespace() }) return emptyList()
 
         val currentToken = dictionaries.currentToken(input, language)
         val words = wordsIn(input, language)
@@ -55,16 +56,39 @@ class SuggestionEngine(context: Context) {
             .distinct()
             .filterNot { learned != null && language.normalize(it) == language.normalize(learned) }
 
-        if (currentToken.isEmpty() && learned == null) {
-            return language.defaultWords.map(::SuggestionItem)
+        if (currentToken.isEmpty()) {
+            val idlePool = buildList {
+                learned?.let(::add)
+                addAll(language.defaultWords)
+            }
+            return arrangeSuggestions(
+                learned = learned,
+                dictionaryWords = idlePool,
+                language = language,
+                allowDefaultFallbacks = true
+            )
         }
 
+        return arrangeSuggestions(
+            learned = learned,
+            dictionaryWords = dictionaryWords,
+            language = language,
+            allowDefaultFallbacks = false
+        )
+    }
+
+    private fun arrangeSuggestions(
+        learned: String?,
+        dictionaryWords: List<String>,
+        language: DictionaryLanguage,
+        allowDefaultFallbacks: Boolean
+    ): List<SuggestionItem> {
         val firstPreferred = learned ?: dictionaryWords.getOrNull(1)
         val middlePreferred = dictionaryWords.getOrNull(0)
         val thirdPreferred = dictionaryWords.getOrNull(2)
         val pool = buildList {
             addAll(dictionaryWords)
-            addAll(language.defaultWords)
+            if (allowDefaultFallbacks) addAll(language.defaultWords)
         }
 
         val used = HashSet<String>()
@@ -125,13 +149,24 @@ class SuggestionEngine(context: Context) {
         val token = input.takeLastWhile { !it.isWhitespace() }
         val at = token.lastIndexOf('@')
         if (at <= 0 || token.indexOf('@') != at) return null
+
         val localPart = token.substring(0, at)
         val domainPrefix = token.substring(at + 1).lowercase()
-        if (localPart.any { it.isWhitespace() } || localPart.any { it.isISOControl() }) return null
+        if (!isValidEmailLocalPart(localPart)) return null
+        if (domainPrefix.any { !it.isLetterOrDigit() && it != '.' && it != '-' }) return null
+
         val matches = EMAIL_DOMAINS.filter { it.startsWith(domainPrefix) }.take(3)
         if (matches.isEmpty()) return null
         return matches.map { domain ->
             SuggestionItem(displayText = domain, commitText = "$localPart@$domain")
+        }
+    }
+
+    private fun isValidEmailLocalPart(localPart: String): Boolean {
+        if (localPart.isBlank() || localPart.length > 64) return false
+        if (localPart.first() == '.' || localPart.last() == '.' || ".." in localPart) return false
+        return localPart.all { char ->
+            char.isLetterOrDigit() || char in EMAIL_LOCAL_SYMBOLS
         }
     }
 
@@ -202,5 +237,6 @@ class SuggestionEngine(context: Context) {
 
     companion object {
         private val EMAIL_DOMAINS = listOf("gmail.com", "outlook.com", "yahoo.com")
+        private val EMAIL_LOCAL_SYMBOLS = setOf('.', '_', '-', '+')
     }
 }
