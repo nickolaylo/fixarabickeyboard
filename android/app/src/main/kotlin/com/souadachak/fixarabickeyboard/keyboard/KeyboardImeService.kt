@@ -29,7 +29,8 @@ import com.souadachak.fixarabickeyboard.R
 
 class KeyboardImeService : InputMethodService() {
     private lateinit var coinManager: CoinManager
-    private lateinit var dictionaryManager: DictionaryManager
+    private lateinit var suggestionEngine: SuggestionEngine
+    private var activeEditorInfo: EditorInfo? = null
     private val typedText = StringBuilder()
     private var keyboardMode: KeyboardMode = KeyboardMode.ARABIC
     private var lastLetterMode: KeyboardMode = KeyboardMode.ARABIC
@@ -57,8 +58,8 @@ class KeyboardImeService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         coinManager = CoinManager(this)
-        dictionaryManager = DictionaryManager(this)
-        dictionaryManager.preload(DictionaryLanguage.ARABIC)
+        suggestionEngine = SuggestionEngine(this)
+        suggestionEngine.preload(DictionaryLanguage.ARABIC)
         toolsExpanded = prefs.getBoolean("tools_expanded", true)
         repairExpanded = prefs.getBoolean("repair_expanded", false)
     }
@@ -103,6 +104,7 @@ class KeyboardImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        activeEditorInfo = attribute
         typedText.clear()
         repairBuffer = ""
         repairEditText?.setText("")
@@ -280,7 +282,7 @@ class KeyboardImeService : InputMethodService() {
         }
     }
 
-    private fun makeSmartRow(mode: SmartRowMode, suggestions: List<String>): LinearLayout {
+    private fun makeSmartRow(mode: SmartRowMode, suggestions: List<SuggestionItem>): LinearLayout {
         val hasClipboardText = clipboardText().isNotBlank()
         return LinearLayout(this).apply {
             suggestionsRow = if (mode == SmartRowMode.DICTIONARY) this else null
@@ -324,11 +326,11 @@ class KeyboardImeService : InputMethodService() {
         addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(44), 1f))
     }
 
-    private fun LinearLayout.addDictionaryContentToSmartRow(suggestions: List<String>) {
+    private fun LinearLayout.addDictionaryContentToSmartRow(suggestions: List<SuggestionItem>) {
         val visibleSuggestions = suggestions.take(3)
-        visibleSuggestions.forEach { word ->
+        visibleSuggestions.forEach { suggestion ->
             addView(
-                makeSuggestionKey(word) { commitSuggestion(word) },
+                makeSuggestionKey(suggestion.displayText) { commitSuggestion(suggestion.commitText) },
                 LinearLayout.LayoutParams(0, dp(44), 1f).apply { setMargins(dp(2), 0, dp(2), 0) }
             )
         }
@@ -337,7 +339,7 @@ class KeyboardImeService : InputMethodService() {
         }
     }
 
-    private fun rebuildDictionaryContent(suggestions: List<String>) {
+    private fun rebuildDictionaryContent(suggestions: List<SuggestionItem>) {
         val row = suggestionsRow ?: return
         row.removeViews(1, (row.childCount - 2).coerceAtLeast(0))
         val wand = row.getChildAt(row.childCount - 1)
@@ -881,7 +883,14 @@ class KeyboardImeService : InputMethodService() {
         if (toolsExpanded && key != "⌫") toolsExpanded = false
         when (key) {
             "⌫" -> handleBackspace()
-            "مسافة" -> commitAndRemember(" ")
+            "مسافة" -> {
+                suggestionEngine.learnFromCompletedText(
+                    textBeforeBoundary = currentSuggestionSource(),
+                    language = activeDictionaryLanguage(),
+                    editorInfo = activeEditorInfo
+                )
+                commitAndRemember(" ")
+            }
             "↵" -> handleEnter()
             else -> {
                 commitAndRemember(key)
@@ -922,24 +931,35 @@ class KeyboardImeService : InputMethodService() {
 
     private fun commitSuggestion(word: String) {
         toolsExpanded = false
+        if (!repairExpanded) {
+            suggestionEngine.learnSelectedWord(
+                sourceBeforeSelection = currentSuggestionSource(),
+                selectedWord = word,
+                language = activeDictionaryLanguage(),
+                editorInfo = activeEditorInfo
+            )
+        }
         if (repairExpanded) {
             val edit = repairEditText ?: return
             replaceOrAppendTokenInEditText(edit, word)
             updateSuggestions(edit.text.toString())
             return
         }
-        val current = typedText.toString()
-        val shouldAppend = current.isEmpty() || current.last().isWhitespace() || isDictionarySeparator(current.last())
-        if (!shouldAppend) {
-            val lastToken = current.trim().split(Regex("\\s+")).lastOrNull().orEmpty()
-            if (lastToken.isNotEmpty()) {
-                currentInputConnection?.deleteSurroundingText(lastToken.length, 0)
-                typedText.delete(typedText.length - lastToken.length, typedText.length)
+        val current = currentSuggestionSource()
+        val lastToken = if ('@' in word) {
+            current.takeLastWhile { char -> !char.isWhitespace() }
+        } else {
+            current.takeLastWhile { char ->
+                !char.isWhitespace() && !isDictionarySeparator(char)
             }
         }
+        if (lastToken.isNotEmpty()) {
+            currentInputConnection?.deleteSurroundingText(lastToken.length, 0)
+        }
         currentInputConnection?.commitText("$word ", 1)
+        typedText.clear()
         typedText.append(word).append(' ')
-        updateSuggestions(typedText.toString())
+        updateSuggestions()
     }
 
     private fun replaceOrAppendTokenInEditText(edit: EditText, word: String) {
@@ -1029,18 +1049,20 @@ class KeyboardImeService : InputMethodService() {
         }
     }
 
-    private fun dictionarySuggestions(source: String): List<String> {
-        if (source.isBlank()) return defaultSuggestions()
+    private fun dictionarySuggestions(source: String): List<SuggestionItem> {
+        return suggestionEngine.suggestions(
+            input = source,
+            language = activeDictionaryLanguage(),
+            editorInfo = activeEditorInfo
+        )
+    }
 
+    private fun activeDictionaryLanguage(): DictionaryLanguage {
         return when (lastLetterMode) {
-            KeyboardMode.ARABIC -> dictionaryManager.suggestions(
-                input = source,
-                language = DictionaryLanguage.ARABIC,
-                limit = 3
-            )
-            KeyboardMode.ENGLISH,
-            KeyboardMode.FRENCH -> CorrectionEngine.suggestions(source)
-            else -> emptyList()
+            KeyboardMode.ARABIC -> DictionaryLanguage.ARABIC
+            KeyboardMode.ENGLISH -> DictionaryLanguage.ENGLISH
+            KeyboardMode.FRENCH -> DictionaryLanguage.FRENCH
+            else -> DictionaryLanguage.ARABIC
         }
     }
 
@@ -1053,15 +1075,6 @@ class KeyboardImeService : InputMethodService() {
             ?.toString()
             .orEmpty()
         return beforeCursor.ifBlank { typedText.toString() }
-    }
-
-    private fun defaultSuggestions(): List<String> {
-        return when (lastLetterMode) {
-            KeyboardMode.ARABIC -> listOf("السلام", "مرحبا", "شكرا")
-            KeyboardMode.ENGLISH -> listOf("hello", "thanks", "please")
-            KeyboardMode.FRENCH -> listOf("bonjour", "merci", "salut")
-            else -> listOf("السلام", "مرحبا", "شكرا")
-        }
     }
 
     private fun clipboardText(): String {

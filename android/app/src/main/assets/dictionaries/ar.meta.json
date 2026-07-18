@@ -1,12 +1,6 @@
 {
+  "format": 2,
   "language": "ar",
-  "format": "utf8-one-word-per-line",
-  "word_count": 294177,
-  "sha256": "92e2770df591b4f5d453b0eac1d277144762f7122df50e859be61eeae533ec77",
-  "source": "AyaSpell Arabic Dictionary for Hunspell",
-  "source_revision": "36a90abb22c5033be58e709c8980160e0ce6c88c",
-  "source_entry_file": "templates/ar.dic",
-  "license": "GPL-2.0-or-later OR LGPL-2.1-or-later OR MPL-1.1",
-  "normalization": "remove combining marks and tatweel; unify alef variants only for search ordering",
-  "build_script": "tools/dictionaries/build_arabic_dictionary.py"
+  "path": "dictionaries/ar/",
+  "note": "Bucketed dictionary replaces legacy ar.txt"
 }
