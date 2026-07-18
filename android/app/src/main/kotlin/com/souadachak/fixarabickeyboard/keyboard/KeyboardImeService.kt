@@ -52,6 +52,8 @@ class KeyboardImeService : InputMethodService() {
     private var repairOverlayView: View? = null
     private val deleteRepeatHandler = Handler(Looper.getMainLooper())
     private var deleteRepeatRunnable: Runnable? = null
+    private val suggestionRefreshHandler = Handler(Looper.getMainLooper())
+    private var suggestionRefreshRunnable: Runnable? = null
 
     private companion object {
         const val SUGGESTION_CONTEXT_LIMIT = 160
@@ -109,6 +111,8 @@ class KeyboardImeService : InputMethodService() {
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         activeEditorInfo = attribute
+        suggestionRefreshRunnable?.let(suggestionRefreshHandler::removeCallbacks)
+        suggestionRefreshRunnable = null
 
         if (!restarting) {
             typedText.clear()
@@ -907,7 +911,7 @@ class KeyboardImeService : InputMethodService() {
                 consumeShiftIfNeeded()
             }
         }
-        updateSuggestions()
+        refreshSuggestionsAfterLocalEdit()
     }
 
     private fun handleRepairBoxKey(key: String) {
@@ -996,14 +1000,30 @@ class KeyboardImeService : InputMethodService() {
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL))
         if (typedText.isNotEmpty()) typedText.deleteCharAt(typedText.length - 1)
-        updateSuggestions()
     }
 
     private fun handleEnter() {
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
         typedText.clear()
-        updateSuggestions()
+    }
+
+    /**
+     * Refresh from the local buffer immediately, then reconcile once Android has
+     * committed the character to the editor. This keeps dictionary suggestions
+     * live on every key instead of waiting for a space/boundary event.
+     */
+    private fun refreshSuggestionsAfterLocalEdit() {
+        val localSnapshot = typedText.toString()
+        updateSuggestions(localSnapshot)
+
+        suggestionRefreshRunnable?.let(suggestionRefreshHandler::removeCallbacks)
+        val runnable = Runnable {
+            suggestionRefreshRunnable = null
+            updateSuggestions(currentSuggestionSource())
+        }
+        suggestionRefreshRunnable = runnable
+        suggestionRefreshHandler.postDelayed(runnable, 24L)
     }
 
     private fun pasteToRepairBox() {
