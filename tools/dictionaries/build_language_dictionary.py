@@ -157,9 +157,16 @@ def bucket_file_name(key: str) -> str:
     return "_".join(f"{ord(c):04x}" for c in key) + ".txt.gz"
 
 
-def emit_candidate(handle: TextIO, language: str, display: str, priority: int) -> None:
+def emit_candidate(
+    handle: TextIO,
+    language: str,
+    display: str,
+    priority: int,
+    source_rank: int | None,
+) -> None:
     normalized = display.translate(ALEF_EQUIVALENTS) if language == "ar" else display.casefold()
-    handle.write(f"{normalized}\t{display}\t{priority}\n")
+    rank_value = source_rank if source_rank is not None else 2147483647
+    handle.write(f"{normalized}\t{display}\t{priority}\t{rank_value}\n")
 
 def build(args: argparse.Namespace) -> dict[str, object]:
     output: Path = args.output
@@ -182,21 +189,22 @@ def build(args: argparse.Namespace) -> dict[str, object]:
                 if not is_valid_word(word, args.language):
                     rejected_entries += 1
                     continue
-                emit_candidate(raw_out, args.language, word, 0)
+                emit_candidate(raw_out, args.language, word, 0, source_entries)
                 for derived in affixes.direct_derivatives(word, affixes.flags(raw_flags)):
-                    emit_candidate(raw_out, args.language, derived, 1)
+                    # Generated forms stay below source entries during ranking.
+                    emit_candidate(raw_out, args.language, derived, 1, None)
                     generated_entries += 1
                 if source_entries % 50000 == 0:
                     print(f"processed_source_entries={source_entries}", flush=True)
             if args.seed and args.seed.exists():
                 for line in args.seed.read_text(encoding="utf-8-sig").splitlines():
                     if line.strip():
-                        emit_candidate(raw_out, args.language, remove_marks(line.strip()), 0)
+                        emit_candidate(raw_out, args.language, remove_marks(line.strip()), 0, 0)
 
         subprocess.run(
             [
                 "sort", "-S", "512M", "--parallel=4", "-t", "\t",
-                "-k1,1", "-k2,2", "-k3,3n", str(raw_path), "-o", str(sorted_path),
+                "-k1,1", "-k2,2", "-k3,3n", "-k4,4n", str(raw_path), "-o", str(sorted_path),
             ],
             check=True,
             env={"LC_ALL": "C"},
@@ -211,7 +219,7 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         bucket_base = 0
         bucket_path: Path | None = None
         current_normalized = ""
-        normalized_group: dict[str, int] = {}
+        normalized_group: dict[str, tuple[int, int]] = {}
 
         def close_bucket() -> None:
             nonlocal bucket_handle, bucket_count, bucket_base, bucket_path
@@ -240,8 +248,14 @@ def build(args: argparse.Namespace) -> dict[str, object]:
                 bucket_path = output / bucket_file_name(key)
                 bucket_handle = gzip.open(bucket_path, "wt", encoding="utf-8", newline="\n", compresslevel=6)
             assert bucket_handle is not None
-            for word, priority in sorted(normalized_group.items(), key=lambda item: (item[1], item[0])):
-                bucket_handle.write(f"{priority}\t{word}\n")
+            for word, (priority, source_rank) in sorted(
+                normalized_group.items(),
+                key=lambda item: (item[1][0], item[1][1], item[0]),
+            ):
+                if source_rank == 2147483647:
+                    bucket_handle.write(f"{priority}\t{word}\n")
+                else:
+                    bucket_handle.write(f"{priority}\t{source_rank}\t{word}\n")
                 bucket_count += 1
                 total_unique += 1
                 if priority == 0:
@@ -252,15 +266,17 @@ def build(args: argparse.Namespace) -> dict[str, object]:
 
         with sorted_path.open("r", encoding="utf-8") as sorted_in:
             for line in sorted_in:
-                normalized, word, raw_priority = line.rstrip("\n").split("\t", 2)
+                normalized, word, raw_priority, raw_source_rank = line.rstrip("\n").split("\t", 3)
                 priority = int(raw_priority)
+                source_rank = int(raw_source_rank)
                 if normalized != current_normalized:
                     flush_normalized_group()
                     current_normalized = normalized
                     normalized_group = {}
                 previous = normalized_group.get(word)
-                if previous is None or priority < previous:
-                    normalized_group[word] = priority
+                candidate = (priority, source_rank)
+                if previous is None or candidate < previous:
+                    normalized_group[word] = candidate
             flush_normalized_group()
         close_bucket()
 
@@ -269,7 +285,8 @@ def build(args: argparse.Namespace) -> dict[str, object]:
             handle.write(f"{key}\t{file_name}\t{count}\t{compressed_size}\n")
 
     metadata = {
-        "format": 2,
+        "format": 3,
+        "ranking": "embedded_source_order",
         "language": args.language,
         "source": args.source_name,
         "source_entries": source_entries,

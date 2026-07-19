@@ -1,5 +1,5 @@
 {
-  "format": 2,
+  "format": 3,
   "language": "ar",
   "source": "AyaSpell 3.7",
   "source_entries": 465885,
@@ -9,5 +9,7 @@
   "unique_generated_entries": 3980883,
   "rejected_entries": 14,
   "bucket_count": 729,
-  "sha256": "7cf19af788d2c42cab935d440cdc0f047b6c8fdab5dc83174b583addf0eb38ed"
+  "sha256": "d2c869894c80e68162b89163b646e4802402294576584f99744307ae3a6d8871",
+  "ranking": "embedded_source_order",
+  "ranked_source_entries": 294174
 }

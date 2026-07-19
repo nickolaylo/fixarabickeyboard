@@ -59,15 +59,16 @@ enum class DictionaryLanguage(
 
 data class DictionaryEntry(
     val word: String,
-    val isGeneratedDerivative: Boolean
+    val isGeneratedDerivative: Boolean,
+    val sourceRank: Int = Int.MAX_VALUE
 )
 
 /**
  * Central dictionary reader used by every keyboard language.
  *
- * Dictionaries are split into sorted gzip buckets. Only the bucket matching
- * the current token is decompressed, which keeps the multi-million-word Arabic
- * dictionary out of the IME heap.
+ * Dictionaries stay split into sorted buckets. Each bucket now carries its
+ * source rank inside the existing file, so quality ranking does not require a
+ * second parallel asset tree or extra runtime lookups.
  */
 class DictionaryManager(context: Context) {
     private val assets = context.applicationContext.assets
@@ -95,30 +96,146 @@ class DictionaryManager(context: Context) {
         if (normalizedToken.isEmpty()) return emptyList()
 
         val index = indexFor(language) ?: return emptyList()
-        if (index.records.isEmpty()) return emptyList()
-
-        val targetKey = normalizedToken.take(2)
-        var recordIndex = index.lowerBound(targetKey)
-        if (recordIndex >= index.records.size) return emptyList()
+        if (index.size == 0) return emptyList()
 
         val result = ArrayList<DictionaryEntry>(limit)
-        val seenWords = HashSet<String>(limit * 2)
+        val seenWords = HashSet<String>(limit * 3)
+
+        // Real prefix completions always come first. Arabic additionally
+        // resolves attached particles/articles against the same base lexicon:
+        // "الرجا" -> search "رجا" -> surface result "الرجال".
+        for (variant in searchVariants(normalizedToken, language)) {
+            val candidates = prefixMatches(
+                normalizedToken = variant.lookupToken,
+                language = language,
+                index = index,
+                scanLimit = PREFIX_SCAN_LIMIT
+            ).sortedWith(matchComparator(variant.lookupToken, language))
+
+            for (entry in candidates) {
+                val normalizedEntry = language.normalize(entry.word)
+                if (variant.displayPrefix.isNotEmpty() && normalizedEntry == variant.lookupToken) continue
+
+                val surfaceWord = variant.displayPrefix + entry.word
+                val normalizedSurface = language.normalize(surfaceWord)
+                if (!normalizedSurface.startsWith(normalizedToken)) continue
+                if (!seenWords.add(normalizedSurface)) continue
+
+                result.add(
+                    DictionaryEntry(
+                        word = surfaceWord,
+                        isGeneratedDerivative = entry.isGeneratedDerivative || variant.displayPrefix.isNotEmpty(),
+                        sourceRank = entry.sourceRank
+                    )
+                )
+                if (result.size >= limit) return result
+            }
+        }
+
+        // Preserve the agreed lexicographic-neighbour fallback only after true
+        // prefix completions have been exhausted.
+        for (entry in nearestEntries(normalizedToken, language, index, limit * 2)) {
+            val key = language.normalize(entry.word)
+            if (seenWords.add(key)) result.add(entry)
+            if (result.size >= limit) break
+        }
+        return result
+    }
+
+    private fun searchVariants(
+        normalizedToken: String,
+        language: DictionaryLanguage
+    ): List<SearchVariant> {
+        val variants = ArrayList<SearchVariant>()
+        variants.add(SearchVariant(normalizedToken, ""))
+        if (language != DictionaryLanguage.ARABIC) return variants
+
+        for (prefix in ARABIC_SEARCH_PREFIXES) {
+            if (normalizedToken.length <= prefix.length || !normalizedToken.startsWith(prefix)) continue
+            val stripped = normalizedToken.substring(prefix.length)
+            if (stripped.length < MIN_STRIPPED_PREFIX_LENGTH) continue
+            variants.add(SearchVariant(stripped, prefix))
+        }
+        return variants.distinctBy { it.lookupToken to it.displayPrefix }
+    }
+
+    private fun prefixMatches(
+        normalizedToken: String,
+        language: DictionaryLanguage,
+        index: LanguageIndex,
+        scanLimit: Int
+    ): List<DictionaryEntry> {
+        if (normalizedToken.isEmpty() || scanLimit <= 0) return emptyList()
+        val targetKey = normalizedToken.take(2)
+        var recordIndex = index.lowerBound(targetKey)
+        val result = ArrayList<DictionaryEntry>(minOf(scanLimit, 64))
+
+        while (recordIndex < index.size && result.size < scanLimit) {
+            val record = index.recordAt(recordIndex)
+            val keyMatches = if (normalizedToken.length == 1) {
+                record.key.startsWith(normalizedToken)
+            } else {
+                record.key == targetKey
+            }
+            if (!keyMatches) break
+
+            val bucket = bucketFor(language, record.fileName)
+            if (bucket != null) {
+                result.addAll(
+                    bucket.entriesStartingWith(
+                        normalizedToken = normalizedToken,
+                        language = language,
+                        limit = scanLimit - result.size
+                    )
+                )
+            }
+            recordIndex++
+        }
+        return result
+    }
+
+    private fun nearestEntries(
+        normalizedToken: String,
+        language: DictionaryLanguage,
+        index: LanguageIndex,
+        limit: Int
+    ): List<DictionaryEntry> {
+        if (limit <= 0) return emptyList()
+        val targetKey = normalizedToken.take(2)
+        var recordIndex = index.lowerBound(targetKey)
+        val result = ArrayList<DictionaryEntry>(limit)
         var firstBucket = true
 
-        while (recordIndex < index.records.size && result.size < limit) {
-            val record = index.records[recordIndex]
+        while (recordIndex < index.size && result.size < limit) {
+            val record = index.recordAt(recordIndex)
             val bucket = bucketFor(language, record.fileName)
             if (bucket != null) {
                 val bucketToken = if (firstBucket) normalizedToken else ""
-                for (entry in bucket.entriesFrom(bucketToken, language, limit - result.size)) {
-                    if (seenWords.add(entry.word)) result.add(entry)
-                    if (result.size >= limit) break
-                }
+                result.addAll(
+                    bucket.entriesFrom(
+                        normalizedToken = bucketToken,
+                        language = language,
+                        limit = limit - result.size
+                    )
+                )
             }
             firstBucket = false
             recordIndex++
         }
         return result
+    }
+
+    private fun matchComparator(
+        normalizedToken: String,
+        language: DictionaryLanguage
+    ): Comparator<DictionaryEntry> {
+        return compareBy<DictionaryEntry>(
+            { if (language.normalize(it.word) == normalizedToken) 0 else 1 },
+            { if (it.isGeneratedDerivative) 1 else 0 },
+            { (language.normalize(it.word).length - normalizedToken.length).coerceAtLeast(0) },
+            { it.sourceRank },
+            { language.normalize(it.word) }
+        )
     }
 
     fun currentToken(input: String, language: DictionaryLanguage): String {
@@ -151,10 +268,6 @@ class DictionaryManager(context: Context) {
         val cacheKey = "${language.code}/$fileName"
         bucketCache[cacheKey]?.let { return it }
 
-        // Android's asset packager may transparently unpack *.gz files and
-        // expose them without the .gz suffix inside the APK. The index keeps
-        // the source filename, so resolve both packaged forms centrally for
-        // every current and future dictionary language.
         val basePath = "dictionaries/${language.code}/"
         val candidateNames = buildList {
             add(fileName)
@@ -210,7 +323,12 @@ class DictionaryManager(context: Context) {
 
     private data class BucketRecord(val key: String, val fileName: String)
 
-    private class LanguageIndex(val records: List<BucketRecord>) {
+    private class LanguageIndex(private val records: List<BucketRecord>) {
+        val size: Int
+            get() = records.size
+
+        fun recordAt(index: Int): BucketRecord = records[index]
+
         fun lowerBound(target: String): Int {
             var low = 0
             var high = records.size
@@ -225,22 +343,31 @@ class DictionaryManager(context: Context) {
     private class IndexedBucket(private val bytes: ByteArray) {
         private val lineStarts: IntArray = buildLineStarts(bytes)
 
+        fun entriesStartingWith(
+            normalizedToken: String,
+            language: DictionaryLanguage,
+            limit: Int
+        ): List<DictionaryEntry> {
+            if (lineStarts.isEmpty() || normalizedToken.isEmpty() || limit <= 0) return emptyList()
+            var low = lowerBound(normalizedToken, language)
+            val result = ArrayList<DictionaryEntry>(limit)
+            while (low < lineStarts.size && result.size < limit) {
+                val entry = entryAt(low)
+                val key = language.normalize(entry.word)
+                if (!key.startsWith(normalizedToken)) break
+                result.add(entry)
+                low++
+            }
+            return result
+        }
+
         fun entriesFrom(
             normalizedToken: String,
             language: DictionaryLanguage,
             limit: Int
         ): List<DictionaryEntry> {
             if (lineStarts.isEmpty() || limit <= 0) return emptyList()
-            var low = 0
-            var high = lineStarts.size
-            if (normalizedToken.isNotEmpty()) {
-                while (low < high) {
-                    val middle = (low + high) ushr 1
-                    val entry = entryAt(middle)
-                    val key = language.normalize(entry.word)
-                    if (key < normalizedToken) low = middle + 1 else high = middle
-                }
-            }
+            val low = if (normalizedToken.isEmpty()) 0 else lowerBound(normalizedToken, language)
 
             val result = ArrayList<DictionaryEntry>(limit)
             var index = low
@@ -251,16 +378,45 @@ class DictionaryManager(context: Context) {
             return result
         }
 
+        private fun lowerBound(
+            normalizedToken: String,
+            language: DictionaryLanguage
+        ): Int {
+            var low = 0
+            var high = lineStarts.size
+            while (low < high) {
+                val middle = (low + high) ushr 1
+                val entry = entryAt(middle)
+                val key = language.normalize(entry.word)
+                if (key < normalizedToken) low = middle + 1 else high = middle
+            }
+            return low
+        }
+
         private fun entryAt(index: Int): DictionaryEntry {
             val start = lineStarts[index]
             var end = if (index + 1 < lineStarts.size) lineStarts[index + 1] - 1 else bytes.size
             if (end > start && bytes[end - 1] == '\n'.code.toByte()) end--
             if (end > start && bytes[end - 1] == '\r'.code.toByte()) end--
             val line = String(bytes, start, end - start, Charsets.UTF_8)
-            val tab = line.indexOf('\t')
-            if (tab < 0) return DictionaryEntry(line, false)
-            val priority = line.substring(0, tab).toIntOrNull() ?: 0
-            return DictionaryEntry(line.substring(tab + 1), priority > 0)
+            val firstTab = line.indexOf('\t')
+            if (firstTab < 0) return DictionaryEntry(line, false)
+
+            val priority = line.substring(0, firstTab).toIntOrNull() ?: 0
+            val secondTab = line.indexOf('\t', firstTab + 1)
+            if (secondTab < 0) {
+                return DictionaryEntry(
+                    word = line.substring(firstTab + 1),
+                    isGeneratedDerivative = priority > 0
+                )
+            }
+
+            val sourceRank = line.substring(firstTab + 1, secondTab).toIntOrNull() ?: Int.MAX_VALUE
+            return DictionaryEntry(
+                word = line.substring(secondTab + 1),
+                isGeneratedDerivative = priority > 0,
+                sourceRank = sourceRank
+            )
         }
 
         private fun buildLineStarts(data: ByteArray): IntArray {
@@ -279,8 +435,19 @@ class DictionaryManager(context: Context) {
         }
     }
 
+    private data class SearchVariant(
+        val lookupToken: String,
+        val displayPrefix: String
+    )
+
     companion object {
         private const val MAX_CACHED_BUCKETS = 2
+        private const val PREFIX_SCAN_LIMIT = 512
+        private const val MIN_STRIPPED_PREFIX_LENGTH = 2
+        private val ARABIC_SEARCH_PREFIXES = listOf(
+            "وال", "فال", "بال", "كال", "لل", "ال",
+            "و", "ف", "ب", "ك", "ل"
+        )
         private const val GZIP_MAGIC_FIRST = 0x1F
         private const val GZIP_MAGIC_SECOND = 0x8B
     }
