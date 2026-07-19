@@ -166,18 +166,14 @@ class DictionaryManager(context: Context) {
         scanLimit: Int
     ): List<DictionaryEntry> {
         if (normalizedToken.isEmpty() || scanLimit <= 0) return emptyList()
-        val targetKey = normalizedToken.take(2)
-        var recordIndex = index.lowerBound(targetKey)
+        var recordIndex = index.firstMatchingRecord(normalizedToken) ?: return emptyList()
         val result = ArrayList<DictionaryEntry>(minOf(scanLimit, 64))
+        val singleCharacterLookup = normalizedToken.length == 1
 
         while (recordIndex < index.size && result.size < scanLimit) {
             val record = index.recordAt(recordIndex)
-            val keyMatches = if (normalizedToken.length == 1) {
-                record.key.startsWith(normalizedToken)
-            } else {
-                record.key == targetKey
-            }
-            if (!keyMatches) break
+            if (singleCharacterLookup && !record.key.startsWith(normalizedToken)) break
+            if (!singleCharacterLookup && !normalizedToken.startsWith(record.key)) break
 
             val bucket = bucketFor(language, record.fileName)
             if (bucket != null) {
@@ -190,6 +186,7 @@ class DictionaryManager(context: Context) {
                 )
             }
             recordIndex++
+            if (!singleCharacterLookup) break
         }
         return result
     }
@@ -201,8 +198,8 @@ class DictionaryManager(context: Context) {
         limit: Int
     ): List<DictionaryEntry> {
         if (limit <= 0) return emptyList()
-        val targetKey = normalizedToken.take(2)
-        var recordIndex = index.lowerBound(targetKey)
+        var recordIndex = index.firstMatchingRecord(normalizedToken)
+            ?: index.lowerBound(normalizedToken.take(1))
         val result = ArrayList<DictionaryEntry>(limit)
         var firstBucket = true
 
@@ -229,13 +226,29 @@ class DictionaryManager(context: Context) {
         normalizedToken: String,
         language: DictionaryLanguage
     ): Comparator<DictionaryEntry> {
-        return compareBy<DictionaryEntry>(
-            { if (language.normalize(it.word) == normalizedToken) 0 else 1 },
-            { if (it.isGeneratedDerivative) 1 else 0 },
-            { (language.normalize(it.word).length - normalizedToken.length).coerceAtLeast(0) },
-            { it.sourceRank },
-            { language.normalize(it.word) }
-        )
+        val exactMatch: (DictionaryEntry) -> Int = {
+            if (language.normalize(it.word) == normalizedToken) 0 else 1
+        }
+        val completionLength: (DictionaryEntry) -> Int = {
+            (language.normalize(it.word).length - normalizedToken.length).coerceAtLeast(0)
+        }
+
+        return if (language == DictionaryLanguage.ARABIC) {
+            compareBy(
+                exactMatch,
+                { if (it.isGeneratedDerivative) 1 else 0 },
+                completionLength,
+                { it.sourceRank },
+                { language.normalize(it.word) }
+            )
+        } else {
+            compareBy(
+                exactMatch,
+                { it.sourceRank },
+                completionLength,
+                { language.normalize(it.word) }
+            )
+        }
     }
 
     fun currentToken(input: String, language: DictionaryLanguage): String {
@@ -328,6 +341,23 @@ class DictionaryManager(context: Context) {
             get() = records.size
 
         fun recordAt(index: Int): BucketRecord = records[index]
+
+        fun firstMatchingRecord(normalizedToken: String): Int? {
+            if (normalizedToken.isEmpty()) return null
+            if (normalizedToken.length == 1) {
+                val index = lowerBound(normalizedToken)
+                return index.takeIf {
+                    it < records.size && records[it].key.startsWith(normalizedToken)
+                }
+            }
+
+            for (length in minOf(MAX_BUCKET_KEY_LENGTH, normalizedToken.length) downTo 1) {
+                val candidate = normalizedToken.take(length)
+                val index = lowerBound(candidate)
+                if (index < records.size && records[index].key == candidate) return index
+            }
+            return null
+        }
 
         fun lowerBound(target: String): Int {
             var low = 0
@@ -442,6 +472,7 @@ class DictionaryManager(context: Context) {
 
     companion object {
         private const val MAX_CACHED_BUCKETS = 2
+        private const val MAX_BUCKET_KEY_LENGTH = 2
         private const val PREFIX_SCAN_LIMIT = 512
         private const val MIN_STRIPPED_PREFIX_LENGTH = 2
         private val ARABIC_SEARCH_PREFIXES = listOf(

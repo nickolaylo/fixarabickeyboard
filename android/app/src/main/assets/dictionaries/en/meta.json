@@ -1,8 +1,16 @@
 {
-  "format": 2,
   "language": "en",
-  "source": "Existing keyboard seed list",
-  "unique_entries": 30,
-  "bucket_count": 24,
-  "sha256": "3c6e40950eb9c6174406f64eae79e77fceb1b5125cd6e468eaa6ddfa4d797b38"
+  "display_name": "English",
+  "entry_count": 97731,
+  "bucket_count": 26,
+  "bucket_strategy": "first-letter",
+  "format": "priority\\tsource_rank\\tword",
+  "source_files": [
+    "en_50k.txt",
+    "en_full.txt"
+  ],
+  "source_project": "Hermit Dave / FrequencyWords",
+  "license": "MIT",
+  "cleaning": "ASCII English words, contractions, proper-name filtering, unsafe/noise filtering, frequency ranking",
+  "generated_for_patch": "Patch 21 — Complete English Dictionary Integration"
 }
