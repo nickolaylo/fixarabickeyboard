@@ -25,6 +25,7 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
+import android.widget.Toast
 import com.souadachak.fixarabickeyboard.R
 
 class KeyboardImeService : InputMethodService() {
@@ -343,8 +344,15 @@ class KeyboardImeService : InputMethodService() {
     private fun LinearLayout.addDictionaryContentToSmartRow(suggestions: List<SuggestionItem>) {
         val visibleSuggestions = suggestions.take(3)
         visibleSuggestions.forEach { suggestion ->
+            val onLongClick = suggestion.learnedContextWords?.let {
+                { forgetLearnedSuggestion(suggestion) }
+            }
             addView(
-                makeSuggestionKey(suggestion.displayText) { commitSuggestion(suggestion.commitText) },
+                makeSuggestionKey(
+                    label = suggestion.displayText,
+                    onClick = { commitSuggestion(suggestion.commitText) },
+                    onLongClick = onLongClick
+                ),
                 LinearLayout.LayoutParams(0, dp(44), 1f).apply { setMargins(dp(2), 0, dp(2), 0) }
             )
         }
@@ -447,7 +455,28 @@ class KeyboardImeService : InputMethodService() {
 
     private fun makeActionKey(label: String, color: Int, size: Float, onClick: () -> Unit): TextView = makeBaseKey(label, color, KeyboardColors.text, size, Typeface.BOLD, label.length <= 2 && label != "⌫" && label != "↵", onClick)
 
-    private fun makeSuggestionKey(label: String, onClick: () -> Unit): TextView = makeBaseKey(label, Color.TRANSPARENT, KeyboardColors.text, 15f, Typeface.NORMAL, false, onClick)
+    private fun makeSuggestionKey(
+        label: String,
+        onClick: () -> Unit,
+        onLongClick: (() -> Unit)? = null
+    ): TextView {
+        return makeBaseKey(
+            label,
+            Color.TRANSPARENT,
+            KeyboardColors.text,
+            15f,
+            Typeface.NORMAL,
+            false,
+            onClick
+        ).apply {
+            if (onLongClick != null) {
+                setOnLongClickListener {
+                    onLongClick()
+                    true
+                }
+            }
+        }
+    }
 
     private fun makeToolButton(label: String, bgColor: Int, textColor: Int, size: Float, onClick: () -> Unit): TextView = makeBaseKey(label, bgColor, textColor, size, Typeface.BOLD, false, onClick)
 
@@ -941,6 +970,22 @@ class KeyboardImeService : InputMethodService() {
     private fun commitAndRemember(text: String) {
         currentInputConnection?.commitText(text, 1)
         typedText.append(text)
+    }
+
+    private fun forgetLearnedSuggestion(suggestion: SuggestionItem) {
+        val removed = suggestionEngine.forgetLearnedSuggestion(
+            suggestion = suggestion,
+            language = activeDictionaryLanguage()
+        )
+        if (!removed) return
+
+        val message = when (activeDictionaryLanguage()) {
+            DictionaryLanguage.ARABIC -> "تم حذف الاقتراح المتعلم"
+            DictionaryLanguage.FRENCH -> "Suggestion apprise supprimée"
+            DictionaryLanguage.ENGLISH -> "Learned suggestion removed"
+        }
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        updateSuggestions(currentSuggestionSource())
     }
 
     private fun commitSuggestion(word: String) {

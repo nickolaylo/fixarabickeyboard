@@ -66,47 +66,108 @@ class LocalNextWordStore(context: Context) {
         }
     }
 
-    /** Legacy single-word lookup kept for existing learned data. */
+    /** Legacy single-word lookup kept for existing call sites. */
     fun bestNextWord(language: DictionaryLanguage, previousWord: String): String? {
-        return bestNextWord(language, listOf(previousWord))
+        return bestNextWord(language, listOf(previousWord), prefix = null)
     }
 
-    /**
-     * Looks up the best next word for the exact supplied context.
-     * Existing Patch 14-18 single-word learning remains available through the legacy table.
-     */
     fun bestNextWord(
         language: DictionaryLanguage,
         contextWords: List<String>
     ): String? {
+        return bestNextWord(language, contextWords, prefix = null)
+    }
+
+    /**
+     * Returns the best learned word for the exact context.
+     * When [prefix] is present, ranking happens only among learned words that match it.
+     */
+    fun bestNextWord(
+        language: DictionaryLanguage,
+        contextWords: List<String>,
+        prefix: String?
+    ): String? {
         val contextKeys = normalizedContext(language, contextWords)
         if (contextKeys.isEmpty()) return null
 
+        val prefixKey = prefix?.let(language::normalize).orEmpty()
         val contextKey = contextKeys.joinToString(CONTEXT_SEPARATOR)
-        helper.readableDatabase.query(
-            CONTEXT_TABLE,
-            arrayOf("next_word"),
-            "language = ? AND context_key = ?",
-            arrayOf(language.code, contextKey),
-            null,
-            null,
-            "use_count DESC, last_used DESC",
-            "1"
-        ).use { cursor ->
-            if (cursor.moveToFirst()) return cursor.getString(0)
-        }
+        queryBestContextWord(
+            language = language,
+            contextKey = contextKey,
+            prefixKey = prefixKey
+        )?.let { return it }
 
         // Preserve all previously learned one-word pairs after the database upgrade.
         if (contextKeys.size == 1) {
-            return bestLegacyNextWord(language, contextKeys.first())
+            return bestLegacyNextWord(language, contextKeys.first(), prefixKey)
         }
         return null
+    }
+
+    /** Removes only the selected learned relation from its exact context. */
+    fun forget(
+        language: DictionaryLanguage,
+        contextWords: List<String>,
+        nextWord: String
+    ): Boolean {
+        val contextKeys = normalizedContext(language, contextWords)
+        val nextKey = language.normalize(nextWord)
+        if (contextKeys.isEmpty() || nextKey.isEmpty()) return false
+
+        val contextKey = contextKeys.joinToString(CONTEXT_SEPARATOR)
+        val database = helper.writableDatabase
+        database.beginTransaction()
+        return try {
+            var deleted = database.delete(
+                CONTEXT_TABLE,
+                "language = ? AND context_key = ? AND next_key = ?",
+                arrayOf(language.code, contextKey, nextKey)
+            )
+            if (contextKeys.size == 1) {
+                deleted += database.delete(
+                    LEGACY_TABLE,
+                    "language = ? AND previous_key = ? AND next_key = ?",
+                    arrayOf(language.code, contextKeys.first(), nextKey)
+                )
+            }
+            database.setTransactionSuccessful()
+            deleted > 0
+        } finally {
+            database.endTransaction()
+        }
     }
 
     fun clearAll() {
         val database = helper.writableDatabase
         database.delete(CONTEXT_TABLE, null, null)
         database.delete(LEGACY_TABLE, null, null)
+    }
+
+    private fun queryBestContextWord(
+        language: DictionaryLanguage,
+        contextKey: String,
+        prefixKey: String
+    ): String? {
+        val selection = StringBuilder("language = ? AND context_key = ?")
+        val arguments = arrayListOf(language.code, contextKey)
+        if (prefixKey.isNotEmpty()) {
+            selection.append(" AND next_key LIKE ? ESCAPE '\\'")
+            arguments.add(escapeLike(prefixKey) + "%")
+        }
+
+        helper.readableDatabase.query(
+            CONTEXT_TABLE,
+            arrayOf("next_word"),
+            selection.toString(),
+            arguments.toTypedArray(),
+            null,
+            null,
+            "use_count DESC, last_used DESC",
+            "1"
+        ).use { cursor ->
+            return if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
     }
 
     private fun normalizedContext(
@@ -122,19 +183,38 @@ class LocalNextWordStore(context: Context) {
 
     private fun bestLegacyNextWord(
         language: DictionaryLanguage,
-        previousKey: String
+        previousKey: String,
+        prefixKey: String
     ): String? {
+        val selection = StringBuilder("language = ? AND previous_key = ?")
+        val arguments = arrayListOf(language.code, previousKey)
+        if (prefixKey.isNotEmpty()) {
+            selection.append(" AND next_key LIKE ? ESCAPE '\\'")
+            arguments.add(escapeLike(prefixKey) + "%")
+        }
+
         helper.readableDatabase.query(
             LEGACY_TABLE,
             arrayOf("next_word"),
-            "language = ? AND previous_key = ?",
-            arrayOf(language.code, previousKey),
+            selection.toString(),
+            arguments.toTypedArray(),
             null,
             null,
             "use_count DESC, last_used DESC",
             "1"
         ).use { cursor ->
             return if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }
+
+    private fun escapeLike(value: String): String {
+        return buildString(value.length) {
+            value.forEach { char ->
+                when (char) {
+                    '\\', '%', '_' -> append('\\').append(char)
+                    else -> append(char)
+                }
+            }
         }
     }
 

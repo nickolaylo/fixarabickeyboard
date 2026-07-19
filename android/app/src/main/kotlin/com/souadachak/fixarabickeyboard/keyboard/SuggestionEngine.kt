@@ -6,7 +6,8 @@ import android.view.inputmethod.EditorInfo
 
 data class SuggestionItem(
     val displayText: String,
-    val commitText: String = displayText
+    val commitText: String = displayText,
+    val learnedContextWords: List<String>? = null
 )
 
 /** Central suggestion policy shared by Arabic and every present/future language. */
@@ -37,18 +38,23 @@ class SuggestionEngine(context: Context) {
         }
 
         val learned = if (EditorPrivacy.canUsePersonalizedSuggestions(editorInfo)) {
-            val completionFromContext = bestLearnedFromContext(language, completedWords)
-                ?.takeIf {
-                    currentToken.isEmpty() ||
-                        language.normalize(it).startsWith(language.normalize(currentToken))
-                }
+            val completionFromContext = bestLearnedFromContext(
+                language = language,
+                contextWords = completedWords,
+                prefix = currentToken.takeIf(String::isNotEmpty)
+            )
 
-            // Keeps the already approved behavior: typing the complete word
-            // "السلام" can immediately suggest its learned follower "عليكم".
-            // It also enables: "الرجال و" -> "النساء" before another space.
+            // Keeps the approved next-word behavior before a trailing space:
+            // "السلام" -> "عليكم" and "الرجال و" -> "النساء".
             val nextAfterCurrentContext = currentToken
                 .takeIf(String::isNotEmpty)
-                ?.let { token -> bestLearnedFromContext(language, completedWords + token) }
+                ?.let { token ->
+                    bestLearnedFromContext(
+                        language = language,
+                        contextWords = completedWords + token,
+                        prefix = null
+                    )
+                }
 
             completionFromContext ?: nextAfterCurrentContext
         } else {
@@ -58,16 +64,15 @@ class SuggestionEngine(context: Context) {
         val dictionaryWords = dictionaries.suggestions(input, language, 8)
             .map { it.word }
             .distinct()
-            .filterNot { learned != null && language.normalize(it) == language.normalize(learned) }
+            .filterNot {
+                learned != null &&
+                    language.normalize(it) == language.normalize(learned.word)
+            }
 
         if (currentToken.isEmpty()) {
-            val idlePool = buildList {
-                learned?.let(::add)
-                addAll(language.defaultWords)
-            }
             return arrangeSuggestions(
                 learned = learned,
-                dictionaryWords = idlePool,
+                dictionaryWords = language.defaultWords,
                 language = language,
                 allowDefaultFallbacks = true
             )
@@ -81,55 +86,89 @@ class SuggestionEngine(context: Context) {
         )
     }
 
+    fun forgetLearnedSuggestion(
+        suggestion: SuggestionItem,
+        language: DictionaryLanguage
+    ): Boolean {
+        val contextWords = suggestion.learnedContextWords ?: return false
+        return nextWordStore.forget(
+            language = language,
+            contextWords = contextWords,
+            nextWord = suggestion.commitText
+        )
+    }
+
     private fun bestLearnedFromContext(
         language: DictionaryLanguage,
-        contextWords: List<String>
-    ): String? {
+        contextWords: List<String>,
+        prefix: String?
+    ): LearnedCandidate? {
         if (contextWords.isEmpty()) return null
 
         if (contextWords.size >= 2) {
-            nextWordStore.bestNextWord(language, contextWords.takeLast(2))?.let { return it }
+            val twoWordContext = contextWords.takeLast(2)
+            nextWordStore.bestNextWord(language, twoWordContext, prefix)?.let { word ->
+                return LearnedCandidate(word, twoWordContext)
+            }
         }
 
         val lastWord = contextWords.last()
         // One-letter connectors such as Arabic "و" are useful only inside
         // a two-word context. Avoid making them broad global predictors.
         if (lastWord.length >= 2) {
-            return nextWordStore.bestNextWord(language, listOf(lastWord))
+            val oneWordContext = listOf(lastWord)
+            nextWordStore.bestNextWord(language, oneWordContext, prefix)?.let { word ->
+                return LearnedCandidate(word, oneWordContext)
+            }
         }
         return null
     }
 
     private fun arrangeSuggestions(
-        learned: String?,
+        learned: LearnedCandidate?,
         dictionaryWords: List<String>,
         language: DictionaryLanguage,
         allowDefaultFallbacks: Boolean
     ): List<SuggestionItem> {
-        val firstPreferred = learned ?: dictionaryWords.getOrNull(1)
+        val learnedItem = learned?.let { candidate ->
+            SuggestionItem(
+                displayText = candidate.word,
+                commitText = candidate.word,
+                learnedContextWords = candidate.contextWords
+            )
+        }
         val middlePreferred = dictionaryWords.getOrNull(0)
         val thirdPreferred = dictionaryWords.getOrNull(2)
+        val firstFallbackWord = dictionaryWords.getOrNull(1)
         val pool = buildList {
             addAll(dictionaryWords)
             if (allowDefaultFallbacks) addAll(language.defaultWords)
         }
 
         val used = HashSet<String>()
-        fun choose(preferred: String?, fallbacks: List<String>): SuggestionItem? {
-            val candidate = sequenceOf(preferred).plus(fallbacks.asSequence())
-                .filterNotNull()
-                .firstOrNull { word ->
-                    val key = language.normalize(word)
-                    key.isNotEmpty() && used.add(key)
-                }
-            return candidate?.let(::SuggestionItem)
+        fun choose(
+            preferred: SuggestionItem?,
+            fallbackWords: List<String>
+        ): SuggestionItem? {
+            val candidate = sequence {
+                preferred?.let { yield(it) }
+                fallbackWords.forEach { yield(SuggestionItem(it)) }
+            }.firstOrNull { item ->
+                val key = language.normalize(item.commitText)
+                key.isNotEmpty() && used.add(key)
+            }
+            return candidate
         }
 
         val middleKey = middlePreferred?.let(language::normalize)
-        val firstFallbacks = pool.filterNot { language.normalize(it) == middleKey }
-        val logicalFirst = choose(firstPreferred, firstFallbacks)
-        val logicalMiddle = choose(middlePreferred, pool)
-        val logicalThird = choose(thirdPreferred, pool)
+        val firstFallbacks = buildList {
+            firstFallbackWord?.let(::add)
+            addAll(pool.filterNot { language.normalize(it) == middleKey })
+        }
+
+        val logicalFirst = choose(learnedItem, firstFallbacks)
+        val logicalMiddle = choose(middlePreferred?.let(::SuggestionItem), pool)
+        val logicalThird = choose(thirdPreferred?.let(::SuggestionItem), pool)
         val logicalOrder = listOfNotNull(logicalFirst, logicalMiddle, logicalThird).take(3)
 
         return if (language == DictionaryLanguage.ARABIC) {
@@ -297,6 +336,11 @@ class SuggestionEngine(context: Context) {
             return true
         }
     }
+
+    private data class LearnedCandidate(
+        val word: String,
+        val contextWords: List<String>
+    )
 
     companion object {
         private val EMAIL_DOMAINS = listOf("gmail.com", "outlook.com", "yahoo.com")
