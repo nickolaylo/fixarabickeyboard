@@ -30,23 +30,27 @@ class SuggestionEngine(context: Context) {
 
         val currentToken = dictionaries.currentToken(input, language)
         val words = wordsIn(input, language)
-        val previousWord = when {
-            currentToken.isNotEmpty() && words.isNotEmpty() -> words.dropLast(1).lastOrNull()
-            currentToken.isEmpty() -> words.lastOrNull()
-            else -> null
+        val completedWords = if (currentToken.isNotEmpty() && words.isNotEmpty()) {
+            words.dropLast(1)
+        } else {
+            words
         }
 
         val learned = if (EditorPrivacy.canUsePersonalizedSuggestions(editorInfo)) {
-            val completionFromPrevious = previousWord
-                ?.let { nextWordStore.bestNextWord(language, it) }
+            val completionFromContext = bestLearnedFromContext(language, completedWords)
                 ?.takeIf {
                     currentToken.isEmpty() ||
                         language.normalize(it).startsWith(language.normalize(currentToken))
                 }
-            val nextAfterCurrent = currentToken
-                .takeIf { it.isNotEmpty() }
-                ?.let { nextWordStore.bestNextWord(language, it) }
-            completionFromPrevious ?: nextAfterCurrent
+
+            // Keeps the already approved behavior: typing the complete word
+            // "السلام" can immediately suggest its learned follower "عليكم".
+            // It also enables: "الرجال و" -> "النساء" before another space.
+            val nextAfterCurrentContext = currentToken
+                .takeIf(String::isNotEmpty)
+                ?.let { token -> bestLearnedFromContext(language, completedWords + token) }
+
+            completionFromContext ?: nextAfterCurrentContext
         } else {
             null
         }
@@ -75,6 +79,25 @@ class SuggestionEngine(context: Context) {
             language = language,
             allowDefaultFallbacks = false
         )
+    }
+
+    private fun bestLearnedFromContext(
+        language: DictionaryLanguage,
+        contextWords: List<String>
+    ): String? {
+        if (contextWords.isEmpty()) return null
+
+        if (contextWords.size >= 2) {
+            nextWordStore.bestNextWord(language, contextWords.takeLast(2))?.let { return it }
+        }
+
+        val lastWord = contextWords.last()
+        // One-letter connectors such as Arabic "و" are useful only inside
+        // a two-word context. Avoid making them broad global predictors.
+        if (lastWord.length >= 2) {
+            return nextWordStore.bestNextWord(language, listOf(lastWord))
+        }
+        return null
     }
 
     private fun arrangeSuggestions(
@@ -124,10 +147,14 @@ class SuggestionEngine(context: Context) {
         if (!EditorPrivacy.canLearn(editorInfo, textBeforeBoundary)) return
         val words = wordsIn(textBeforeBoundary, language)
         if (words.size < 2) return
-        val previous = words[words.lastIndex - 1]
-        val next = words.last()
-        if (!isSafeLearnableWord(previous, language) || !isSafeLearnableWord(next, language)) return
-        nextWordStore.record(language, previous, next)
+
+        val nextWord = words.last()
+        if (!isSafeLearnableWord(nextWord, language)) return
+        recordLearnedContexts(
+            language = language,
+            contextWords = words.dropLast(1),
+            nextWord = nextWord
+        )
     }
 
     fun learnSelectedWord(
@@ -136,12 +163,37 @@ class SuggestionEngine(context: Context) {
         language: DictionaryLanguage,
         editorInfo: EditorInfo?
     ) {
-        if (!EditorPrivacy.canLearn(editorInfo, sourceBeforeSelection) || !isSafeLearnableWord(selectedWord, language)) return
+        if (!EditorPrivacy.canLearn(editorInfo, sourceBeforeSelection) ||
+            !isSafeLearnableWord(selectedWord, language)
+        ) return
+
         val currentToken = dictionaries.currentToken(sourceBeforeSelection, language)
         val words = wordsIn(sourceBeforeSelection, language)
-        val previous = if (currentToken.isNotEmpty()) words.dropLast(1).lastOrNull() else words.lastOrNull()
-        if (previous != null && isSafeLearnableWord(previous, language)) {
-            nextWordStore.record(language, previous, selectedWord)
+        val completedWords = if (currentToken.isNotEmpty() && words.isNotEmpty()) {
+            words.dropLast(1)
+        } else {
+            words
+        }
+        recordLearnedContexts(language, completedWords, selectedWord)
+    }
+
+    private fun recordLearnedContexts(
+        language: DictionaryLanguage,
+        contextWords: List<String>,
+        nextWord: String
+    ) {
+        if (contextWords.isEmpty()) return
+
+        val lastWord = contextWords.last()
+        if (isSafeStandaloneContextWord(lastWord, language)) {
+            nextWordStore.recordContext(language, listOf(lastWord), nextWord)
+        }
+
+        if (contextWords.size >= 2) {
+            val twoWordContext = contextWords.takeLast(2)
+            if (twoWordContext.all { isSafeContextWord(it, language) }) {
+                nextWordStore.recordContext(language, twoWordContext, nextWord)
+            }
         }
     }
 
@@ -189,10 +241,21 @@ class SuggestionEngine(context: Context) {
         return result
     }
 
-    private fun isSafeLearnableWord(word: String, language: DictionaryLanguage): Boolean {
-        if (word.length < 2 || !language.acceptsWord(word)) return false
+    private fun isSafeContextWord(word: String, language: DictionaryLanguage): Boolean {
+        if (word.isEmpty() || !language.acceptsWord(word)) return false
         if (word.any { it.isDigit() || it == '@' }) return false
         return word.first().isLetter() && word.last().isLetter()
+    }
+
+    private fun isSafeStandaloneContextWord(
+        word: String,
+        language: DictionaryLanguage
+    ): Boolean {
+        return word.length >= 2 && isSafeContextWord(word, language)
+    }
+
+    private fun isSafeLearnableWord(word: String, language: DictionaryLanguage): Boolean {
+        return word.length >= 2 && isSafeContextWord(word, language)
     }
 
     private object EditorPrivacy {
