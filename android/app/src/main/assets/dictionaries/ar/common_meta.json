@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "language": "ar",
+  "layer": "common_frequency_ranking",
+  "source": "FrequencyWords / OpenSubtitles2018",
+  "source_file": "ar_50k.txt",
+  "content_license": "CC BY-SA 4.0",
+  "base_dictionary": "AyaSpell 3.7",
+  "base_dictionary_policy": "direct-entry intersection only",
+  "base_license": "GPL 2.0+/LGPL 2.1+/MPL 1.1+ tri-license",
+  "top_per_first_letter": 64,
+  "sha256_uncompressed": "706e472b8d6707653ef7a1f31799f02fb1f977ce924e8a673ef988ea34030c0a",
+  "source_rows_considered": 30000,
+  "source_rank_cutoff": 30000,
+  "rejected_basic": 433,
+  "rejected_unsafe": 17,
+  "duplicate_normalized": 4353,
+  "rejected_missing_bucket": 0,
+  "rejected_not_direct_ayaspell": 14755,
+  "entry_count": 10442
+}

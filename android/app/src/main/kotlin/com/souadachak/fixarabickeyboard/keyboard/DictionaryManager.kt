@@ -89,21 +89,26 @@ enum class DictionaryLanguage(
 data class DictionaryEntry(
     val word: String,
     val isGeneratedDerivative: Boolean,
-    val sourceRank: Int = Int.MAX_VALUE
+    val sourceRank: Int = Int.MAX_VALUE,
+    val isCommonWord: Boolean = false
 )
 
 /**
  * Central dictionary reader used by every keyboard language.
  *
- * Dictionaries stay split into sorted buckets. Each bucket now carries its
- * source rank inside the existing file, so quality ranking does not require a
- * second parallel asset tree or extra runtime lookups.
+ * Dictionaries stay split into sorted buckets. Each bucket carries its source
+ * rank inside the existing file. Arabic may additionally load a compact common
+ * word layer that only changes ranking while the complete AyaSpell dictionary
+ * remains the fallback source.
  */
 class DictionaryManager(context: Context) {
     private val assets = context.applicationContext.assets
     private val indexes = mutableMapOf<DictionaryLanguage, LanguageIndex?>()
     private val topSuggestionIndexes =
         mutableMapOf<DictionaryLanguage, Map<String, List<DictionaryEntry>>?>()
+    private val commonTopSuggestionIndexes =
+        mutableMapOf<DictionaryLanguage, Map<String, List<DictionaryEntry>>?>()
+    private val commonBuckets = mutableMapOf<DictionaryLanguage, IndexedBucket?>()
 
     private val bucketCache = object : LinkedHashMap<String, IndexedBucket>(4, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, IndexedBucket>?): Boolean {
@@ -136,12 +141,19 @@ class DictionaryManager(context: Context) {
         // resolves attached particles/articles against the same base lexicon:
         // "الرجا" -> search "رجا" -> surface result "الرجال".
         for (variant in searchVariants(normalizedToken, language)) {
-            val candidates = prefixMatches(
+            val commonCandidates = commonPrefixMatches(
+                normalizedToken = variant.lookupToken,
+                language = language,
+                limit = COMMON_PREFIX_SCAN_LIMIT
+            )
+            val dictionaryCandidates = prefixMatches(
                 normalizedToken = variant.lookupToken,
                 language = language,
                 index = index,
                 scanLimit = PREFIX_SCAN_LIMIT
-            ).sortedWith(matchComparator(variant.lookupToken, language))
+            )
+            val candidates = (commonCandidates + dictionaryCandidates)
+                .sortedWith(matchComparator(variant.lookupToken, language))
 
             for (entry in candidates) {
                 val normalizedEntry = language.normalize(entry.word)
@@ -156,7 +168,8 @@ class DictionaryManager(context: Context) {
                     DictionaryEntry(
                         word = surfaceWord,
                         isGeneratedDerivative = entry.isGeneratedDerivative || variant.displayPrefix.isNotEmpty(),
-                        sourceRank = entry.sourceRank
+                        sourceRank = entry.sourceRank,
+                        isCommonWord = entry.isCommonWord
                     )
                 )
                 if (result.size >= limit) return result
@@ -271,7 +284,9 @@ class DictionaryManager(context: Context) {
 
         return when (language) {
             DictionaryLanguage.ARABIC -> compareBy(
+                { if (it.isCommonWord) 0 else 1 },
                 exactMatch,
+                { if (it.isCommonWord) it.sourceRank else Int.MAX_VALUE },
                 { if (it.isGeneratedDerivative) 1 else 0 },
                 completionLength,
                 { it.sourceRank },
@@ -327,6 +342,91 @@ class DictionaryManager(context: Context) {
             }
         }.getOrNull()
         indexes[language] = loaded
+        return loaded
+    }
+
+    private fun commonPrefixMatches(
+        normalizedToken: String,
+        language: DictionaryLanguage,
+        limit: Int
+    ): List<DictionaryEntry> {
+        if (language != DictionaryLanguage.ARABIC || normalizedToken.isEmpty() || limit <= 0) {
+            return emptyList()
+        }
+
+        if (normalizedToken.length == 1) {
+            return commonTopSuggestionIndexFor(language)
+                ?.get(normalizedToken)
+                ?.take(limit)
+                .orEmpty()
+        }
+
+        return commonBucketFor(language)
+            ?.entriesStartingWith(
+                normalizedToken = normalizedToken,
+                language = language,
+                limit = limit
+            )
+            ?.map { it.copy(isCommonWord = true) }
+            .orEmpty()
+    }
+
+    @Synchronized
+    private fun commonTopSuggestionIndexFor(
+        language: DictionaryLanguage
+    ): Map<String, List<DictionaryEntry>>? {
+        if (commonTopSuggestionIndexes.containsKey(language)) {
+            return commonTopSuggestionIndexes[language]
+        }
+
+        val loaded = runCatching {
+            assets.open("dictionaries/${language.code}/common_top.tsv")
+                .bufferedReader(Charsets.UTF_8)
+                .useLines { lines ->
+                    lines.mapNotNull { line ->
+                        val parts = line.split('\t', limit = 3)
+                        if (parts.size < 3) return@mapNotNull null
+
+                        val key = parts[0]
+                        val sourceRank = parts[1].toIntOrNull() ?: return@mapNotNull null
+                        val word = parts[2]
+                        val normalizedWord = language.normalize(word)
+                        if (
+                            key.length != 1 ||
+                            !language.acceptsWord(word) ||
+                            !normalizedWord.startsWith(key)
+                        ) {
+                            null
+                        } else {
+                            key to DictionaryEntry(
+                                word = word,
+                                isGeneratedDerivative = false,
+                                sourceRank = sourceRank,
+                                isCommonWord = true
+                            )
+                        }
+                    }.groupBy(
+                        keySelector = { it.first },
+                        valueTransform = { it.second }
+                    )
+                }
+        }.getOrNull()
+
+        commonTopSuggestionIndexes[language] = loaded
+        return loaded
+    }
+
+    @Synchronized
+    private fun commonBucketFor(language: DictionaryLanguage): IndexedBucket? {
+        if (commonBuckets.containsKey(language)) return commonBuckets[language]
+
+        val loaded = runCatching {
+            IndexedBucket(
+                readPossiblyGzippedAsset("dictionaries/${language.code}/common.tsv.gz")
+            )
+        }.getOrNull()
+
+        commonBuckets[language] = loaded
         return loaded
     }
 
@@ -578,6 +678,7 @@ class DictionaryManager(context: Context) {
         private const val MAX_CACHED_BUCKETS = 2
         private const val MAX_BUCKET_KEY_LENGTH = 2
         private const val PREFIX_SCAN_LIMIT = 512
+        private const val COMMON_PREFIX_SCAN_LIMIT = 256
         private const val MIN_STRIPPED_PREFIX_LENGTH = 2
         private val ARABIC_SEARCH_PREFIXES = listOf(
             "وال", "فال", "بال", "كال", "لل", "ال",
