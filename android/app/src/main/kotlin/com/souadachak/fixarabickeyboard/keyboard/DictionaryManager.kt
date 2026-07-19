@@ -3,6 +3,7 @@ package com.souadachak.fixarabickeyboard.keyboard
 import android.content.Context
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
+import java.text.Normalizer
 import java.util.LinkedHashMap
 import java.util.zip.GZIPInputStream
 
@@ -15,17 +16,45 @@ enum class DictionaryLanguage(
     FRENCH("fr", listOf("bonjour", "merci", "salut"));
 
     fun normalize(value: String): String {
-        val clean = buildString(value.length) {
-            value.forEach { char ->
-                when {
-                    char == '\u0640' || isCombiningMark(char) -> Unit
-                    this@DictionaryLanguage == ARABIC && char in listOf('أ', 'إ', 'آ', 'ٱ') -> append('ا')
-                    this@DictionaryLanguage == ENGLISH || this@DictionaryLanguage == FRENCH -> append(char.lowercaseChar())
-                    else -> append(char)
+        return when (this) {
+            ARABIC -> buildString(value.length) {
+                value.forEach { char ->
+                    when {
+                        char == '\u0640' || isCombiningMark(char) -> Unit
+                        char in listOf('أ', 'إ', 'آ', 'ٱ') -> append('ا')
+                        else -> append(char)
+                    }
+                }
+            }
+
+            ENGLISH -> buildString(value.length) {
+                value.forEach { char ->
+                    when (char) {
+                        '’', 'ʼ', '`' -> append('\'')
+                        else -> append(char.lowercaseChar())
+                    }
+                }
+            }
+
+            FRENCH -> {
+                val expanded = buildString(value.length + 4) {
+                    value.forEach { original ->
+                        when (val char = original.lowercaseChar()) {
+                            'œ' -> append("oe")
+                            'æ' -> append("ae")
+                            '’', 'ʼ', '`' -> append('\'')
+                            else -> append(char)
+                        }
+                    }
+                }
+                val decomposed = Normalizer.normalize(expanded, Normalizer.Form.NFD)
+                buildString(decomposed.length) {
+                    decomposed.forEach { char ->
+                        if (!isCombiningMark(char)) append(char)
+                    }
                 }
             }
         }
-        return clean
     }
 
     fun acceptsWord(value: String): Boolean {
@@ -33,7 +62,7 @@ enum class DictionaryLanguage(
         return when (this) {
             ARABIC -> value.all { isArabicLetter(it) || isCombiningMark(it) }
             ENGLISH, FRENCH -> value.all {
-                Character.isLetter(it) || it == '\'' || it == '’' || it == '-'
+                Character.isLetter(it) || it == '\'' || it == '’' || it == 'ʼ' || it == '`' || it == '-'
             }
         }
     }
@@ -73,6 +102,8 @@ data class DictionaryEntry(
 class DictionaryManager(context: Context) {
     private val assets = context.applicationContext.assets
     private val indexes = mutableMapOf<DictionaryLanguage, LanguageIndex?>()
+    private val topSuggestionIndexes =
+        mutableMapOf<DictionaryLanguage, Map<String, List<DictionaryEntry>>?>()
 
     private val bucketCache = object : LinkedHashMap<String, IndexedBucket>(4, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, IndexedBucket>?): Boolean {
@@ -170,6 +201,11 @@ class DictionaryManager(context: Context) {
         val result = ArrayList<DictionaryEntry>(minOf(scanLimit, 64))
         val singleCharacterLookup = normalizedToken.length == 1
 
+        if (singleCharacterLookup) {
+            result.addAll(topEntriesFor(language, normalizedToken, scanLimit))
+            if (result.size >= scanLimit) return result
+        }
+
         while (recordIndex < index.size && result.size < scanLimit) {
             val record = index.recordAt(recordIndex)
             if (singleCharacterLookup && !record.key.startsWith(normalizedToken)) break
@@ -233,16 +269,27 @@ class DictionaryManager(context: Context) {
             (language.normalize(it.word).length - normalizedToken.length).coerceAtLeast(0)
         }
 
-        return if (language == DictionaryLanguage.ARABIC) {
-            compareBy(
+        return when (language) {
+            DictionaryLanguage.ARABIC -> compareBy(
                 exactMatch,
                 { if (it.isGeneratedDerivative) 1 else 0 },
                 completionLength,
                 { it.sourceRank },
                 { language.normalize(it.word) }
             )
-        } else {
-            compareBy(
+
+            DictionaryLanguage.FRENCH -> compareBy(
+                exactMatch,
+                {
+                    val normalizedWord = language.normalize(it.word)
+                    if (normalizedWord == normalizedToken && it.word != normalizedWord) 0 else 1
+                },
+                { it.sourceRank },
+                completionLength,
+                { language.normalize(it.word) }
+            )
+
+            DictionaryLanguage.ENGLISH -> compareBy(
                 exactMatch,
                 { it.sourceRank },
                 completionLength,
@@ -257,7 +304,14 @@ class DictionaryManager(context: Context) {
         if (!isTokenCharacter(input[end - 1], language)) return ""
         var start = end - 1
         while (start > 0 && isTokenCharacter(input[start - 1], language)) start--
-        return input.substring(start, end).trim('\'', '’', '-')
+        val rawToken = input.substring(start, end)
+        return when (language) {
+            DictionaryLanguage.ARABIC -> rawToken.trim('\'', '’', '-')
+            DictionaryLanguage.ENGLISH,
+            DictionaryLanguage.FRENCH -> rawToken
+                .trimStart('\'', '’', 'ʼ', '`', '-')
+                .trimEnd('-')
+        }
     }
 
     @Synchronized
@@ -273,6 +327,56 @@ class DictionaryManager(context: Context) {
             }
         }.getOrNull()
         indexes[language] = loaded
+        return loaded
+    }
+
+    private fun topEntriesFor(
+        language: DictionaryLanguage,
+        normalizedToken: String,
+        limit: Int
+    ): List<DictionaryEntry> {
+        if (normalizedToken.length != 1 || limit <= 0) return emptyList()
+        return topSuggestionIndexFor(language)
+            ?.get(normalizedToken)
+            ?.take(limit)
+            .orEmpty()
+    }
+
+    @Synchronized
+    private fun topSuggestionIndexFor(
+        language: DictionaryLanguage
+    ): Map<String, List<DictionaryEntry>>? {
+        if (topSuggestionIndexes.containsKey(language)) return topSuggestionIndexes[language]
+
+        val loaded = runCatching {
+            assets.open("dictionaries/${language.code}/top.tsv")
+                .bufferedReader(Charsets.UTF_8)
+                .useLines { lines ->
+                    lines.mapNotNull { line ->
+                        val parts = line.split('\t', limit = 4)
+                        if (parts.size < 4) return@mapNotNull null
+
+                        val key = parts[0]
+                        val priority = parts[1].toIntOrNull() ?: 0
+                        val sourceRank = parts[2].toIntOrNull() ?: Int.MAX_VALUE
+                        val word = parts[3]
+                        if (key.length != 1 || !language.acceptsWord(word)) {
+                            null
+                        } else {
+                            key to DictionaryEntry(
+                                word = word,
+                                isGeneratedDerivative = priority > 0,
+                                sourceRank = sourceRank
+                            )
+                        }
+                    }.groupBy(
+                        keySelector = { it.first },
+                        valueTransform = { it.second }
+                    )
+                }
+        }.getOrNull()
+
+        topSuggestionIndexes[language] = loaded
         return loaded
     }
 
@@ -330,7 +434,7 @@ class DictionaryManager(context: Context) {
         return when (language) {
             DictionaryLanguage.ARABIC -> language.acceptsWord(char.toString())
             DictionaryLanguage.ENGLISH,
-            DictionaryLanguage.FRENCH -> Character.isLetter(char) || char == '\'' || char == '’' || char == '-'
+            DictionaryLanguage.FRENCH -> Character.isLetter(char) || char == '\'' || char == '’' || char == 'ʼ' || char == '`' || char == '-'
         }
     }
 

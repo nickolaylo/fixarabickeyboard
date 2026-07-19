@@ -1,0 +1,17 @@
+French frequency dictionary attribution
+=======================================
+
+Derived from FrequencyWords by Hermit Dave.
+Source: https://github.com/hermitdave/FrequencyWords
+Original corpus: OpenSubtitles 2018 frequency data.
+
+Content license: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+License: https://creativecommons.org/licenses/by-sa/4.0/
+
+Changes made for this application:
+- filtered symbols, corpus noise, explicit terms, and frequent proper-name pollution;
+- normalized apostrophe variants and added accent-insensitive lookup metadata;
+- retained French display accents and curated complete contractions;
+- split and ranked the resulting dictionary for local keyboard suggestions.
+
+Derived dictionary generated for Patch 22 — Complete French Dictionary Integration.

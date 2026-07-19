@@ -1,8 +1,20 @@
 {
-  "format": 2,
   "language": "fr",
-  "source": "Existing keyboard seed list",
-  "unique_entries": 30,
+  "display_name": "Français",
+  "entry_count": 96703,
   "bucket_count": 26,
-  "sha256": "bd4d76884ba5c3cf9b6beef1797728254dd2648483626dd968b9bb37e10564a3"
+  "bucket_strategy": "first-normalized-letter",
+  "format": "priority\\tsource_rank\\tword",
+  "top_index": "96 frequency-ranked entries per initial letter",
+  "normalization": "lowercase, apostrophe unification, accent folding, œ->oe, æ->ae",
+  "source_files": [
+    "fr_50k.txt",
+    "fr_full.txt",
+    "fr_ignored.txt"
+  ],
+  "source_project": "Hermit Dave / FrequencyWords",
+  "content_license": "CC BY-SA 4.0",
+  "code_license": "MIT",
+  "cleaning": "French Latin words, complete contractions, proper-name filtering, unsafe/noise filtering, frequency ranking",
+  "generated_for_patch": "Patch 22 — Complete French Dictionary Integration"
 }
