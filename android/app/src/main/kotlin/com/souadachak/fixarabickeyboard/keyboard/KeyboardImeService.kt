@@ -37,6 +37,7 @@ class KeyboardImeService : InputMethodService() {
     private var lastLetterMode: KeyboardMode = KeyboardMode.ARABIC
     private var toolsExpanded: Boolean = false
     private var repairExpanded: Boolean = false
+    private var morePanelExpanded: Boolean = false
     private var repairEditText: EditText? = null
     private var suggestionsRow: LinearLayout? = null
     private var repairBuffer: String = ""
@@ -92,11 +93,15 @@ class KeyboardImeService : InputMethodService() {
         }
 
         keyboardStack.addView(makeStableTopArea())
-        keyboardStack.addView(makeNumberRow())
-        activeRows().forEachIndexed { index, row ->
-            keyboardStack.addView(makeLetterRow(row, showBackspace = index == 2))
+        if (morePanelExpanded) {
+            keyboardStack.addView(makeMoreToolsPanel())
+        } else {
+            keyboardStack.addView(makeNumberRow())
+            activeRows().forEachIndexed { index, row ->
+                keyboardStack.addView(makeLetterRow(row, showBackspace = index == 2))
+            }
+            keyboardStack.addView(makeBottomRow())
         }
-        keyboardStack.addView(makeBottomRow())
 
         root.addView(
             keyboardStack,
@@ -122,6 +127,7 @@ class KeyboardImeService : InputMethodService() {
             repairEditText?.setText("")
             lastDictionaryVisible = false
             toolsExpanded = true
+            morePanelExpanded = false
             lastSmartRowMode = SmartRowMode.TOOLS
         } else if (!repairExpanded) {
             syncTypedTextFromEditor()
@@ -238,11 +244,8 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun makeRepairInputRow(): LinearLayout {
-        val sendEnabled = repairBuffer.isNotBlank()
-        val sendButton = makeRepairSendButton(sendEnabled) { commitFixedRepairText() }
-
         repairEditText = EditText(this).apply {
-            hint = "اكتب بالعربية هنا… سنصلحها عند الإرسال"
+            hint = "اكتب بالعربية هنا…"
             gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
             textSize = 17f
             minLines = 1
@@ -261,13 +264,6 @@ class KeyboardImeService : InputMethodService() {
                 override fun beforeTextChanged(text: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(text: CharSequence?, start: Int, before: Int, count: Int) {
                     repairBuffer = text?.toString().orEmpty()
-                    val active = repairBuffer.isNotBlank()
-                    sendButton.isEnabled = active
-                    sendButton.isClickable = active
-                    sendButton.isFocusable = active
-                    sendButton.alpha = if (active) 1f else 0.40f
-                    sendButton.setColorFilter(if (active) KeyboardColors.onAccent else KeyboardColors.disabledIcon)
-                    sendButton.background = ovalBackground(if (active) KeyboardColors.repairButton else KeyboardColors.specialKey)
                 }
                 override fun afterTextChanged(text: Editable?) {}
             })
@@ -280,10 +276,6 @@ class KeyboardImeService : InputMethodService() {
             background = roundedStrokeBackground(KeyboardColors.panel, KeyboardColors.repairStroke, dp(16), dp(1))
             clipChildren = false
             clipToPadding = false
-            addView(
-                sendButton,
-                LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(0, 0, dp(4), 0) }
-            )
             addView(repairEditText, LinearLayout.LayoutParams(0, dp(44), 1f))
         }
     }
@@ -312,7 +304,7 @@ class KeyboardImeService : InputMethodService() {
             background = roundedStrokeBackground(KeyboardColors.panel, KeyboardColors.panelStroke, dp(9), dp(1))
 
             addView(
-                makeSideArrowButton(),
+                makeMoreToolsButton(),
                 LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(0, 0, dp(2), 0) }
             )
 
@@ -323,7 +315,7 @@ class KeyboardImeService : InputMethodService() {
             }
 
             addView(
-                makeIconButton(R.drawable.ic_keyboard_magic_wand, if (repairExpanded) KeyboardColors.onAccent else KeyboardColors.repairActive) { toggleRepairExpanded() },
+                makeIconButton(R.drawable.ic_keyboard_magic_wand, if (repairExpanded) KeyboardColors.onAccent else KeyboardColors.toolbarIcon) { toggleRepairExpanded() },
                 LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(dp(2), 0, 0, 0) }
             )
         }
@@ -332,15 +324,15 @@ class KeyboardImeService : InputMethodService() {
     private fun LinearLayout.addToolIconsToSmartRow(hasClipboardText: Boolean) {
         addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(44), 1f))
         addView(
-            makeIconButton(R.drawable.ic_keyboard_paste, if (hasClipboardText) KeyboardColors.text else KeyboardColors.disabledIcon, enabled = hasClipboardText) { pasteToRepairBox() },
+            makeIconButton(R.drawable.ic_keyboard_paste, if (hasClipboardText) KeyboardColors.toolbarIcon else KeyboardColors.disabledIcon, enabled = hasClipboardText) { pasteToRepairBox() },
             LinearLayout.LayoutParams(dp(44), dp(44)).apply { setMargins(dp(2), 0, dp(2), 0) }
         )
         addView(
-            makeIconButton(R.drawable.ic_keyboard_emoji, KeyboardColors.textMuted) { handleKey("🙂") },
+            makeIconButton(R.drawable.ic_keyboard_emoji, KeyboardColors.toolbarIcon) { handleKey("🙂") },
             LinearLayout.LayoutParams(dp(44), dp(44)).apply { setMargins(dp(2), 0, dp(2), 0) }
         )
         addView(
-            makeIconButton(R.drawable.ic_keyboard_settings, KeyboardColors.textMuted) { openAppSettings() },
+            makeIconButton(R.drawable.ic_keyboard_settings, KeyboardColors.toolbarIcon) { openAppSettings() },
             LinearLayout.LayoutParams(dp(44), dp(44)).apply { setMargins(dp(2), 0, dp(2), 0) }
         )
         addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(44), 1f))
@@ -379,13 +371,80 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun smartRowMode(sourceText: String): SmartRowMode {
-        return when {
-            repairExpanded && sourceText.isNotBlank() -> SmartRowMode.DICTIONARY
-            repairExpanded -> SmartRowMode.TOOLS
-            toolsExpanded -> SmartRowMode.TOOLS
-            sourceText.isNotBlank() -> SmartRowMode.DICTIONARY
-            else -> SmartRowMode.DICTIONARY
+        return if (sourceText.isNotBlank()) SmartRowMode.DICTIONARY else SmartRowMode.TOOLS
+    }
+
+    private fun makeMoreToolsPanel(): LinearLayout {
+        fun row(): LinearLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
         }
+
+        val firstRow = row().apply {
+            addView(
+                makeMoreToolTile(R.drawable.ic_keyboard_share, moreToolLabel("مشاركة", "Share", "Partager")) { shareKeyboardApp() },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+            )
+            addView(
+                makeMoreToolTile(R.drawable.ic_keyboard_settings, moreToolLabel("الإعدادات", "Settings", "Paramètres")) { openAppSettings() },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+            )
+        }
+        val secondRow = row().apply {
+            addView(
+                makeMoreToolTile(R.drawable.ic_keyboard_magic_wand, moreToolLabel("المكافآت", "Rewards", "Récompenses")) { openAppSettings() },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+            )
+            addView(
+                makeMoreToolTile(R.drawable.ic_keyboard_palette, moreToolLabel("المظهر", "Appearance", "Apparence")) { openAppSettings() },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+            )
+        }
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+            addView(firstRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(secondRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(247))
+        }
+    }
+
+    private fun makeMoreToolTile(iconRes: Int, label: String, onClick: () -> Unit): TextView {
+        return TextView(this).apply {
+            text = label
+            gravity = Gravity.CENTER
+            textSize = 15f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setTextColor(KeyboardColors.text)
+            setCompoundDrawablesRelativeWithIntrinsicBounds(0, iconRes, 0, 0)
+            compoundDrawablePadding = dp(10)
+            background = roundedBackground(KeyboardColors.key, dp(16))
+            setPadding(dp(10), dp(16), dp(10), dp(12))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+            setOnTouchListener { view, event -> animatePress(view, event, null, false) }
+        }
+    }
+
+    private fun moreToolLabel(arabic: String, english: String, french: String): String {
+        return when (lastLetterMode) {
+            KeyboardMode.ARABIC -> arabic
+            KeyboardMode.FRENCH -> french
+            else -> english
+        }
+    }
+
+    private fun shareKeyboardApp() {
+        val shareText = "Fix Arabic Keyboard\nhttps://play.google.com/store/apps/details?id=$packageName"
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, shareText)
+        }
+        val chooser = Intent.createChooser(shareIntent, moreToolLabel("مشاركة لوحة المفاتيح", "Share keyboard", "Partager le clavier"))
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(chooser)
     }
 
     private fun makeNumberRow(): LinearLayout {
@@ -433,7 +492,7 @@ class KeyboardImeService : InputMethodService() {
                     addView(makeActionKey("1/2", KeyboardColors.specialKey, 14f) { switchMode(KeyboardMode.SYMBOLS_2) }, bottomParams(dp(38)))
                     addView(makeSpaceKey(), LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
                     addView(makeActionKey(".", KeyboardColors.specialKey, 17f) { handleKey(".") }, bottomParams(dp(34)))
-                    addView(makeActionKey("↵", KeyboardColors.enterKey, 22f) { handleKey("↵") }, bottomParams(dp(64)))
+                    addView(makePrimaryActionButton(), bottomParams(dp(64)))
                 }
                 KeyboardMode.SYMBOLS_2 -> {
                     addView(makeActionKey(languageReturnLabel(), KeyboardColors.specialKey, 15f) { switchMode(lastLetterMode) }, bottomParams(dp(50)))
@@ -441,7 +500,7 @@ class KeyboardImeService : InputMethodService() {
                     addView(makeActionKey("2/2", KeyboardColors.specialKey, 14f) { switchMode(KeyboardMode.SYMBOLS_1) }, bottomParams(dp(38)))
                     addView(makeSpaceKey(), LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
                     addView(makeActionKey("»", KeyboardColors.specialKey, 17f) { handleKey("»") }, bottomParams(dp(34)))
-                    addView(makeActionKey("↵", KeyboardColors.enterKey, 22f) { handleKey("↵") }, bottomParams(dp(64)))
+                    addView(makePrimaryActionButton(), bottomParams(dp(64)))
                 }
             }
         }
@@ -453,7 +512,23 @@ class KeyboardImeService : InputMethodService() {
         addView(makeBottomIconButton(R.drawable.ic_keyboard_emoji) { handleKey("🙂") }, bottomParams(dp(38)))
         addView(makeSpaceKey(), LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
         addView(makeActionKey(period, KeyboardColors.specialKey, 17f) { handleKey(period) }, bottomParams(dp(34)))
-        addView(makeActionKey("↵", KeyboardColors.enterKey, 22f) { handleKey("↵") }, bottomParams(dp(64)))
+        addView(makePrimaryActionButton(), bottomParams(dp(64)))
+    }
+
+    private fun makePrimaryActionButton(): View {
+        if (!repairExpanded) {
+            return makeActionKey("↵", KeyboardColors.enterKey, 22f) { handleKey("↵") }
+        }
+        return ImageButton(this).apply {
+            setImageResource(R.drawable.ic_keyboard_magic_wand)
+            setColorFilter(KeyboardColors.onAccent)
+            background = roundedBackground(KeyboardColors.enterKey, dp(11))
+            scaleType = android.widget.ImageView.ScaleType.CENTER
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            contentDescription = moreToolLabel("تنفيذ الإصلاح", "Apply repair", "Appliquer la correction")
+            setOnClickListener { commitFixedRepairText() }
+            setOnTouchListener { view, event -> animatePress(view, event, null, false) }
+        }
     }
 
     private fun bottomParams(width: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(width, dp(52)).apply { setMargins(dp(2), 0, dp(2), 0) }
@@ -549,43 +624,25 @@ class KeyboardImeService : InputMethodService() {
         }
     }
 
-    private fun makeRepairSendButton(enabled: Boolean, onClick: () -> Unit): ImageButton {
+    private fun makeMoreToolsButton(): ImageButton {
         return ImageButton(this).apply {
-            setImageResource(R.drawable.ic_keyboard_fat_arrow_up)
-            setColorFilter(if (enabled) KeyboardColors.onAccent else KeyboardColors.disabledIcon)
-            background = ovalBackground(if (enabled) KeyboardColors.repairButton else KeyboardColors.specialKey)
-            scaleType = android.widget.ImageView.ScaleType.CENTER
-            setPadding(dp(9), dp(9), dp(9), dp(9))
-            isEnabled = enabled
-            alpha = if (enabled) 1f else 0.40f
-            isClickable = enabled
-            isFocusable = enabled
-            contentDescription = null
-            setOnClickListener { if (isEnabled) onClick() }
-            setOnTouchListener { view, event ->
-                if (isEnabled) animatePress(view, event, null, false) else false
+            if (morePanelExpanded) {
+                setImageResource(R.drawable.ic_keyboard_expand_less)
+                rotation = -90f
+            } else {
+                setImageResource(R.drawable.ic_keyboard_more_tools)
+                rotation = 0f
             }
-        }
-    }
-
-    private fun makeSideArrowButton(): ImageButton {
-        return ImageButton(this).apply {
-            setImageResource(R.drawable.ic_keyboard_expand_less)
-            setColorFilter(KeyboardColors.textMuted)
+            setColorFilter(KeyboardColors.toolbarIcon)
             background = roundedBackground(Color.TRANSPARENT, dp(14))
             scaleType = android.widget.ImageView.ScaleType.CENTER
             setPadding(dp(9), dp(9), dp(9), dp(9))
-            rotation = if (toolsExpanded) -90f else 90f
-            contentDescription = null
-            setOnClickListener {
-                val nextRotation = if (toolsExpanded) 90f else -90f
-                animate()
-                    .rotation(nextRotation)
-                    .setDuration(120)
-                    .setInterpolator(DecelerateInterpolator())
-                    .withEndAction { toggleToolsExpanded() }
-                    .start()
-            }
+            contentDescription = moreToolLabel(
+                if (morePanelExpanded) "رجوع" else "المزيد",
+                if (morePanelExpanded) "Back" else "More",
+                if (morePanelExpanded) "Retour" else "Plus"
+            )
+            setOnClickListener { toggleMorePanel() }
             setOnTouchListener { view, event -> animatePress(view, event, null, false) }
         }
     }
@@ -602,10 +659,10 @@ class KeyboardImeService : InputMethodService() {
         return ImageButton(this).apply {
             setImageResource(iconRes)
             setColorFilter(iconColor)
-            val surfaceColor = when (iconRes) {
-                R.drawable.ic_keyboard_magic_wand -> if (repairExpanded) KeyboardColors.wandActiveSurface else KeyboardColors.wandSurface
-                R.drawable.ic_keyboard_emoji -> KeyboardColors.iconKey
-                else -> Color.TRANSPARENT
+            val surfaceColor = if (iconRes == R.drawable.ic_keyboard_magic_wand && repairExpanded) {
+                KeyboardColors.wandActiveSurface
+            } else {
+                Color.TRANSPARENT
             }
             background = roundedBackground(surfaceColor, dp(14))
             scaleType = android.widget.ImageView.ScaleType.CENTER
@@ -768,6 +825,14 @@ class KeyboardImeService : InputMethodService() {
         deleteRepeatRunnable = null
     }
 
+    private fun toggleMorePanel() {
+        if (repairExpanded) {
+            repairBuffer = repairEditText?.text?.toString() ?: repairBuffer
+        }
+        morePanelExpanded = !morePanelExpanded
+        setInputView(onCreateInputView())
+    }
+
     private fun toggleToolsExpanded() {
         toolsExpanded = !toolsExpanded
         prefs.edit()
@@ -782,6 +847,7 @@ class KeyboardImeService : InputMethodService() {
             repairBuffer = repairEditText?.text?.toString() ?: repairBuffer
         }
         repairExpanded = !repairExpanded
+        morePanelExpanded = false
         prefs.edit()
             .putBoolean("repair_expanded", repairExpanded)
             .putBoolean("tools_expanded", toolsExpanded)
@@ -1316,6 +1382,7 @@ class KeyboardImeService : InputMethodService() {
         val repairField: Int = Color.rgb(249, 245, 252)
         val wandSurface: Int = Color.rgb(232, 218, 252)
         val wandActiveSurface: Int = Color.rgb(111, 88, 164)
+        val toolbarIcon: Int = Color.rgb(78, 69, 84)
         val keyStroke: Int = Color.rgb(215, 206, 222)
         val specialStroke: Int = Color.rgb(210, 199, 220)
         val enterStroke: Int = Color.rgb(88, 65, 139)
