@@ -251,7 +251,7 @@ class KeyboardImeService : InputMethodService() {
                     sendButton.isClickable = active
                     sendButton.isFocusable = active
                     sendButton.alpha = if (active) 1f else 0.40f
-                    sendButton.setColorFilter(if (active) KeyboardColors.text else KeyboardColors.disabledIcon)
+                    sendButton.setColorFilter(if (active) KeyboardColors.onAccent else KeyboardColors.disabledIcon)
                     sendButton.background = ovalBackground(if (active) KeyboardColors.repairButton else KeyboardColors.specialKey)
                     val nextHeight = repairSlotHeightForText(repairBuffer)
                     if (repairExpanded && nextHeight != lastRepairSlotHeight) {
@@ -453,7 +453,15 @@ class KeyboardImeService : InputMethodService() {
 
     private fun makeLetterKey(label: String, onClick: () -> Unit): TextView = makeBaseKey(label, KeyboardColors.key, KeyboardColors.text, 20f, Typeface.NORMAL, true, onClick)
 
-    private fun makeActionKey(label: String, color: Int, size: Float, onClick: () -> Unit): TextView = makeBaseKey(label, color, KeyboardColors.text, size, Typeface.BOLD, label.length <= 2 && label != "⌫" && label != "↵", onClick)
+    private fun makeActionKey(label: String, color: Int, size: Float, onClick: () -> Unit): TextView = makeBaseKey(
+        label,
+        color,
+        if (color == KeyboardColors.enterKey) KeyboardColors.onAccent else KeyboardColors.text,
+        size,
+        Typeface.BOLD,
+        label.length <= 2 && label != "⌫" && label != "↵",
+        onClick
+    )
 
     private fun makeSuggestionKey(
         label: String,
@@ -537,7 +545,7 @@ class KeyboardImeService : InputMethodService() {
     private fun makeRepairSendButton(enabled: Boolean, onClick: () -> Unit): ImageButton {
         return ImageButton(this).apply {
             setImageResource(R.drawable.ic_keyboard_fat_arrow_up)
-            setColorFilter(if (enabled) KeyboardColors.text else KeyboardColors.disabledIcon)
+            setColorFilter(if (enabled) KeyboardColors.onAccent else KeyboardColors.disabledIcon)
             background = ovalBackground(if (enabled) KeyboardColors.repairButton else KeyboardColors.specialKey)
             scaleType = android.widget.ImageView.ScaleType.CENTER
             setPadding(dp(9), dp(9), dp(9), dp(9))
@@ -587,7 +595,12 @@ class KeyboardImeService : InputMethodService() {
         return ImageButton(this).apply {
             setImageResource(iconRes)
             setColorFilter(iconColor)
-            background = roundedBackground(Color.TRANSPARENT, dp(14))
+            val surfaceColor = when (iconRes) {
+                R.drawable.ic_keyboard_magic_wand -> KeyboardColors.wandSurface
+                R.drawable.ic_keyboard_emoji -> KeyboardColors.iconKey
+                else -> Color.TRANSPARENT
+            }
+            background = roundedBackground(surfaceColor, dp(14))
             scaleType = android.widget.ImageView.ScaleType.CENTER
             setPadding(dp(9), dp(9), dp(9), dp(9))
             isEnabled = enabled
@@ -900,8 +913,6 @@ class KeyboardImeService : InputMethodService() {
             smart.alpha = 1f
         }
     }
-
-
 
     private fun openAppSettings() {
         val intent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent()
@@ -1235,7 +1246,21 @@ class KeyboardImeService : InputMethodService() {
     private fun roundedBackground(color: Int, radius: Int): GradientDrawable {
         return GradientDrawable().apply {
             setColor(color)
-            cornerRadius = radius.toFloat()
+            val keyLike = color == KeyboardColors.key ||
+                color == KeyboardColors.keyPressed ||
+                color == KeyboardColors.iconKey ||
+                color == KeyboardColors.specialKey ||
+                color == KeyboardColors.actionKey ||
+                color == KeyboardColors.enterKey
+            cornerRadius = maxOf(radius, if (keyLike) dp(11) else radius).toFloat()
+            when (color) {
+                KeyboardColors.key -> setStroke(dp(1), KeyboardColors.keyStroke)
+                KeyboardColors.keyPressed -> setStroke(dp(1), KeyboardColors.repairStroke)
+                KeyboardColors.iconKey,
+                KeyboardColors.specialKey,
+                KeyboardColors.actionKey -> setStroke(dp(1), KeyboardColors.specialStroke)
+                KeyboardColors.enterKey -> setStroke(dp(1), KeyboardColors.enterStroke)
+            }
         }
     }
 
@@ -1243,13 +1268,17 @@ class KeyboardImeService : InputMethodService() {
         return GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(color)
+            when (color) {
+                KeyboardColors.repairButton -> setStroke(dp(1), KeyboardColors.enterStroke)
+                KeyboardColors.specialKey -> setStroke(dp(1), KeyboardColors.specialStroke)
+            }
         }
     }
 
     private fun roundedStrokeBackground(color: Int, strokeColor: Int, radius: Int, strokeWidth: Int): GradientDrawable {
         return GradientDrawable().apply {
             setColor(color)
-            cornerRadius = radius.toFloat()
+            cornerRadius = maxOf(radius, dp(13)).toFloat()
             setStroke(strokeWidth, strokeColor)
         }
     }
@@ -1277,21 +1306,26 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private object KeyboardColors {
-        val background: Int = Color.rgb(38, 50, 56)
-        val panel: Int = Color.rgb(35, 46, 52)
-        val panelStroke: Int = Color.rgb(50, 66, 74)
-        val repairStroke: Int = Color.rgb(115, 87, 168)
-        val key: Int = Color.rgb(61, 73, 79)
-        val keyPressed: Int = Color.rgb(95, 107, 112)
-        val iconKey: Int = Color.rgb(44, 56, 62)
-        val specialKey: Int = Color.rgb(47, 59, 65)
-        val actionKey: Int = Color.rgb(47, 59, 65)
-        val enterKey: Int = Color.rgb(108, 178, 174)
-        val repairActive: Int = Color.rgb(185, 142, 255)
-        val repairButton: Int = Color.rgb(92, 61, 155)
-        val text: Int = Color.rgb(238, 238, 238)
-        val textMuted: Int = Color.rgb(172, 184, 190)
-        val languageLabel: Int = Color.rgb(142, 154, 160)
-        val disabledIcon: Int = Color.rgb(116, 128, 134)
+        val background: Int = Color.rgb(246, 242, 249)
+        val panel: Int = Color.rgb(253, 250, 255)
+        val panelStroke: Int = Color.rgb(218, 209, 225)
+        val repairStroke: Int = Color.rgb(111, 88, 164)
+        val key: Int = Color.rgb(255, 252, 255)
+        val keyPressed: Int = Color.rgb(229, 219, 242)
+        val iconKey: Int = Color.rgb(242, 236, 247)
+        val specialKey: Int = Color.rgb(238, 231, 245)
+        val actionKey: Int = Color.rgb(238, 231, 245)
+        val enterKey: Int = Color.rgb(111, 88, 164)
+        val repairActive: Int = Color.rgb(102, 78, 157)
+        val repairButton: Int = Color.rgb(111, 88, 164)
+        val wandSurface: Int = Color.rgb(232, 218, 252)
+        val keyStroke: Int = Color.rgb(215, 206, 222)
+        val specialStroke: Int = Color.rgb(210, 199, 220)
+        val enterStroke: Int = Color.rgb(88, 65, 139)
+        val text: Int = Color.rgb(45, 38, 51)
+        val textMuted: Int = Color.rgb(93, 84, 99)
+        val languageLabel: Int = Color.rgb(71, 59, 79)
+        val disabledIcon: Int = Color.rgb(157, 146, 164)
+        val onAccent: Int = Color.WHITE
     }
 }
