@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.icu.text.BreakIterator
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -38,6 +39,8 @@ class KeyboardImeService : InputMethodService() {
     private var toolsExpanded: Boolean = false
     private var repairExpanded: Boolean = false
     private var morePanelExpanded: Boolean = false
+    private var emojiPanelExpanded: Boolean = false
+    private var activeEmojiCategory: Int = 0
     private var repairEditText: EditText? = null
     private var suggestionsRow: LinearLayout? = null
     private var repairBuffer: String = ""
@@ -59,10 +62,41 @@ class KeyboardImeService : InputMethodService() {
     private var deleteRepeatCount: Int = 0
     private val suggestionRefreshHandler = Handler(Looper.getMainLooper())
     private var suggestionRefreshRunnable: Runnable? = null
+    private var emojiRecentRow: LinearLayout? = null
 
     private companion object {
         const val SUGGESTION_CONTEXT_LIMIT = 160
         const val KEY_AREA_HEIGHT_DP = 264
+        const val RECENT_EMOJIS_KEY = "recent_emojis"
+        const val EMOJI_SEPARATOR = "\u001F"
+
+        val EMOJI_CATEGORY_ICONS = listOf("🙂", "👍", "❤️", "🎉")
+        val EMOJI_CATEGORIES = listOf(
+            listOf(
+                "😀", "😃", "😄", "😁", "😆", "😅", "😂",
+                "🙂", "🙃", "😉", "😊", "😍", "🥰", "😘",
+                "😎", "🤔", "😐", "😢", "😭", "😡", "😴",
+                "🤩", "🥳", "🤗", "🤭", "🤫", "😇", "😌"
+            ),
+            listOf(
+                "👍", "👎", "👌", "✌️", "🤞", "🤟", "🤘",
+                "👋", "🤚", "🖐️", "✋", "🙌", "👏", "🤝",
+                "💪", "🙏", "👆", "👇", "👈", "👉", "✍️",
+                "🤙", "🫶", "👊", "🤛", "🤜", "☝️", "👐"
+            ),
+            listOf(
+                "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤",
+                "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓",
+                "💗", "💖", "💘", "💝", "💟", "💯", "✅",
+                "❌", "⚠️", "⭐", "🌟", "✨", "❗", "❓"
+            ),
+            listOf(
+                "🎉", "🎊", "🎈", "🎁", "🏆", "⚽", "🏀",
+                "🎮", "📱", "💻", "📷", "📚", "🔥", "🌹",
+                "☀️", "🌙", "☕", "🍕", "🍔", "🚗", "✈️",
+                "🏠", "💡", "📌", "📍", "⏰", "🔔", "🛒"
+            )
+        )
     }
 
     private val prefs by lazy { getSharedPreferences("keyboard_ui_state", Context.MODE_PRIVATE) }
@@ -107,7 +141,11 @@ class KeyboardImeService : InputMethodService() {
         }
         keyAreaContainer = keyArea
         keyArea.addView(
-            if (morePanelExpanded) makeMoreToolsPanel() else makeKeyboardKeyArea(),
+            when {
+                emojiPanelExpanded -> makeEmojiPanel()
+                morePanelExpanded -> makeMoreToolsPanel()
+                else -> makeKeyboardKeyArea()
+            },
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -140,6 +178,9 @@ class KeyboardImeService : InputMethodService() {
             lastDictionaryVisible = false
             toolsExpanded = true
             morePanelExpanded = false
+            emojiPanelExpanded = false
+            activeEmojiCategory = 0
+            emojiRecentRow = null
             lastSmartRowMode = SmartRowMode.TOOLS
         } else if (!repairExpanded) {
             syncTypedTextFromEditor()
@@ -245,11 +286,8 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun repairSlotHeightForText(text: String): Int {
-        val lines = text
-            .lineSequence()
-            .sumOf { line -> ((line.length / 34) + 1).coerceAtLeast(1) }
-            .coerceIn(1, 2)
-        return if (lines == 1) dp(45) else dp(69)
+        val explicitLines = (text.count { it == '\n' } + 1).coerceIn(1, 2)
+        return if (explicitLines == 1) dp(45) else dp(69)
     }
 
     private fun makeRepairInputRow(): FrameLayout {
@@ -260,7 +298,8 @@ class KeyboardImeService : InputMethodService() {
             minLines = 1
             maxLines = 2
             setSingleLine(false)
-            setHorizontallyScrolling(false)
+            setHorizontallyScrolling(true)
+            isHorizontalScrollBarEnabled = false
             isVerticalScrollBarEnabled = true
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE or
@@ -408,7 +447,7 @@ class KeyboardImeService : InputMethodService() {
             LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(dp(1), 0, dp(1), 0) }
         )
         addView(
-            makeIconButton(R.drawable.ic_keyboard_emoji, KeyboardColors.toolbarIcon) { handleKey("🙂") },
+            makeIconButton(R.drawable.ic_keyboard_emoji, KeyboardColors.toolbarIcon) { openEmojiPanel() },
             LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(dp(1), 0, dp(1), 0) }
         )
         addView(
@@ -458,7 +497,7 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun smartRowMode(sourceText: String): SmartRowMode {
-        if (morePanelExpanded) return SmartRowMode.TOOLS
+        if (morePanelExpanded || emojiPanelExpanded) return SmartRowMode.TOOLS
         return if (sourceText.isNotBlank()) SmartRowMode.DICTIONARY else SmartRowMode.TOOLS
     }
 
@@ -472,6 +511,193 @@ class KeyboardImeService : InputMethodService() {
             }
             addView(makeBottomRow())
         }
+    }
+
+
+    private fun makeEmojiPanel(): LinearLayout {
+        val recentContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        emojiRecentRow = recentContainer
+
+        val recentLine = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(
+                TextView(this@KeyboardImeService).apply {
+                    text = moreToolLabel("الأخيرة", "Recent", "Récents")
+                    gravity = Gravity.CENTER
+                    textSize = 12f
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    setTextColor(KeyboardColors.textMuted)
+                    includeFontPadding = false
+                },
+                LinearLayout.LayoutParams(dp(62), LinearLayout.LayoutParams.MATCH_PARENT)
+            )
+            addView(
+                recentContainer,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            )
+        }
+        renderRecentEmojis(recentContainer)
+
+        val categoryRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            EMOJI_CATEGORY_ICONS.forEachIndexed { index, icon ->
+                addView(
+                    TextView(this@KeyboardImeService).apply {
+                        text = icon
+                        gravity = Gravity.CENTER
+                        textSize = 20f
+                        includeFontPadding = false
+                        background = roundedBackground(
+                            if (index == activeEmojiCategory) KeyboardColors.keyPressed else KeyboardColors.specialKey,
+                            dp(10)
+                        )
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener {
+                            activeEmojiCategory = index
+                            refreshKeyAreaContent()
+                        }
+                        setOnTouchListener { view, event -> animatePress(view, event, null, false) }
+                    },
+                    LinearLayout.LayoutParams(0, dp(36), 1f).apply {
+                        setMargins(dp(3), dp(1), dp(3), dp(1))
+                    }
+                )
+            }
+        }
+
+        val grid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            val emojis = EMOJI_CATEGORIES[activeEmojiCategory]
+            repeat(4) { rowIndex ->
+                val row = LinearLayout(this@KeyboardImeService).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                }
+                val rowItems = emojis.drop(rowIndex * 7).take(7)
+                rowItems.forEach { emoji ->
+                    row.addView(
+                        makeEmojiKey(emoji),
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
+                            setMargins(dp(2), dp(2), dp(2), dp(2))
+                        }
+                    )
+                }
+                repeat((7 - rowItems.size).coerceAtLeast(0)) {
+                    row.addView(
+                        View(this@KeyboardImeService),
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
+                            setMargins(dp(2), dp(2), dp(2), dp(2))
+                        }
+                    )
+                }
+                addView(
+                    row,
+                    LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+                )
+            }
+        }
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+            background = roundedBackground(KeyboardColors.panel, dp(14))
+            addView(recentLine, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)))
+            addView(categoryRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)))
+            addView(grid, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+    }
+
+    private fun makeEmojiKey(emoji: String, compact: Boolean = false): TextView {
+        return TextView(this).apply {
+            text = emoji
+            gravity = Gravity.CENTER
+            textSize = if (compact) 20f else 23f
+            includeFontPadding = false
+            background = roundedBackground(KeyboardColors.key, dp(9))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { insertEmoji(emoji) }
+            setOnTouchListener { view, event -> animatePress(view, event, null, false) }
+        }
+    }
+
+    private fun renderRecentEmojis(row: LinearLayout) {
+        row.removeAllViews()
+        val recent = recentEmojis().take(6)
+        if (recent.isEmpty()) {
+            row.addView(
+                TextView(this).apply {
+                    text = moreToolLabel("لا توجد رموز حديثة", "No recent emoji", "Aucun emoji récent")
+                    gravity = Gravity.CENTER
+                    textSize = 12f
+                    setTextColor(KeyboardColors.textMuted)
+                    includeFontPadding = false
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
+            )
+            return
+        }
+        recent.forEach { emoji ->
+            row.addView(
+                makeEmojiKey(emoji, compact = true),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
+                    setMargins(dp(2), dp(2), dp(2), dp(2))
+                }
+            )
+        }
+    }
+
+    private fun openEmojiPanel() {
+        morePanelExpanded = false
+        emojiPanelExpanded = true
+        refreshKeyAreaContent()
+    }
+
+    private fun insertEmoji(emoji: String) {
+        if (repairExpanded) {
+            val edit = repairEditText ?: return
+            val editable = edit.text ?: return
+            val start = kotlin.math.min(
+                edit.selectionStart.coerceIn(0, editable.length),
+                edit.selectionEnd.coerceIn(0, editable.length)
+            )
+            val end = kotlin.math.max(
+                edit.selectionStart.coerceIn(0, editable.length),
+                edit.selectionEnd.coerceIn(0, editable.length)
+            )
+            editable.replace(start, end, emoji)
+            edit.setSelection((start + emoji.length).coerceAtMost(editable.length))
+            repairBuffer = editable.toString()
+        } else {
+            currentInputConnection?.commitText(emoji, 1)
+            typedText.append(emoji)
+        }
+        rememberEmoji(emoji)
+        scheduleSuggestionRefresh()
+    }
+
+    private fun recentEmojis(): List<String> {
+        return prefs.getString(RECENT_EMOJIS_KEY, "")
+            .orEmpty()
+            .split(EMOJI_SEPARATOR)
+            .filter(String::isNotEmpty)
+    }
+
+    private fun rememberEmoji(emoji: String) {
+        val updated = (listOf(emoji) + recentEmojis().filterNot { it == emoji }).take(6)
+        prefs.edit().putString(RECENT_EMOJIS_KEY, updated.joinToString(EMOJI_SEPARATOR)).apply()
+        emojiRecentRow?.let { row -> row.post { renderRecentEmojis(row) } }
     }
 
     private fun makeMoreToolsPanel(): LinearLayout {
@@ -626,10 +852,10 @@ class KeyboardImeService : InputMethodService() {
         addView(makeCommaEmojiKey(comma), bottomParams(dp(38)))
         addView(makeSpaceKey(), LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
         addView(makeActionKey(period, KeyboardColors.specialKey, 17f) { handleKey(period) }, bottomParams(dp(34)))
-        addView(makePrimaryActionButton(), bottomParams(dp(64)))
         if (repairExpanded) {
             addView(makeActionKey("↵", KeyboardColors.specialKey, 18f) { handleKey("↵") }, bottomParams(dp(38)))
         }
+        addView(makePrimaryActionButton(), bottomParams(dp(64)))
     }
 
     private fun makeCommaEmojiKey(comma: String): FrameLayout {
@@ -638,9 +864,9 @@ class KeyboardImeService : InputMethodService() {
             isClickable = true
             isFocusable = true
             contentDescription = moreToolLabel(
-                "فاصلة، ضغط مطول لإدخال رمز تعبيري",
-                "Comma, long press for emoji",
-                "Virgule, appui long pour emoji"
+                "فاصلة، ضغط مطول لفتح الرموز التعبيرية",
+                "Comma, long press to open emoji",
+                "Virgule, appui long pour ouvrir les emojis"
             )
 
             val commaLabel = TextView(this@KeyboardImeService).apply {
@@ -677,7 +903,7 @@ class KeyboardImeService : InputMethodService() {
 
             setOnClickListener { handleKey(comma) }
             setOnLongClickListener {
-                handleKey("🙂")
+                openEmojiPanel()
                 true
             }
             setOnTouchListener { view, event -> animatePress(view, event, null, false) }
@@ -797,7 +1023,8 @@ class KeyboardImeService : InputMethodService() {
 
     private fun makeMoreToolsButton(): ImageButton {
         return ImageButton(this).apply {
-            if (morePanelExpanded) {
+            val auxiliaryPanelOpen = morePanelExpanded || emojiPanelExpanded
+            if (auxiliaryPanelOpen) {
                 setImageResource(R.drawable.ic_keyboard_expand_less)
                 rotation = -90f
             } else {
@@ -809,11 +1036,13 @@ class KeyboardImeService : InputMethodService() {
             scaleType = android.widget.ImageView.ScaleType.CENTER
             setPadding(dp(9), dp(9), dp(9), dp(9))
             contentDescription = moreToolLabel(
-                if (morePanelExpanded) "رجوع" else "المزيد",
-                if (morePanelExpanded) "Back" else "More",
-                if (morePanelExpanded) "Retour" else "Plus"
+                if (auxiliaryPanelOpen) "رجوع" else "المزيد",
+                if (auxiliaryPanelOpen) "Back" else "More",
+                if (auxiliaryPanelOpen) "Retour" else "Plus"
             )
-            setOnClickListener { toggleMorePanel() }
+            setOnClickListener {
+                if (auxiliaryPanelOpen) closeAuxiliaryPanel() else toggleMorePanel()
+            }
             setOnTouchListener { view, event -> animatePress(view, event, null, false) }
         }
     }
@@ -1008,7 +1237,16 @@ class KeyboardImeService : InputMethodService() {
         if (repairExpanded) {
             repairBuffer = repairEditText?.text?.toString() ?: repairBuffer
         }
+        emojiPanelExpanded = false
+        emojiRecentRow = null
         morePanelExpanded = !morePanelExpanded
+        refreshKeyAreaContent()
+    }
+
+    private fun closeAuxiliaryPanel() {
+        morePanelExpanded = false
+        emojiPanelExpanded = false
+        emojiRecentRow = null
         refreshKeyAreaContent()
     }
 
@@ -1016,16 +1254,21 @@ class KeyboardImeService : InputMethodService() {
         val container = keyAreaContainer ?: return
         container.removeAllViews()
         container.addView(
-            if (morePanelExpanded) makeMoreToolsPanel() else makeKeyboardKeyArea(),
+            when {
+                emojiPanelExpanded -> makeEmojiPanel()
+                morePanelExpanded -> makeMoreToolsPanel()
+                else -> makeKeyboardKeyArea()
+            },
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
         )
 
+        val auxiliaryPanelOpen = morePanelExpanded || emojiPanelExpanded
         val sourceText = currentSuggestionSource()
-        val mode = if (morePanelExpanded) SmartRowMode.TOOLS else smartRowMode(sourceText)
-        replaceSmartRow(mode, if (morePanelExpanded) "" else sourceText)
+        val mode = if (auxiliaryPanelOpen) SmartRowMode.TOOLS else smartRowMode(sourceText)
+        replaceSmartRow(mode, if (auxiliaryPanelOpen) "" else sourceText)
     }
 
     private fun toggleToolsExpanded() {
@@ -1045,6 +1288,8 @@ class KeyboardImeService : InputMethodService() {
         }
         repairExpanded = !repairExpanded
         morePanelExpanded = false
+        emojiPanelExpanded = false
+        emojiRecentRow = null
         prefs.edit()
             .putBoolean("repair_expanded", repairExpanded)
             .putBoolean("tools_expanded", toolsExpanded)
@@ -1232,19 +1477,36 @@ class KeyboardImeService : InputMethodService() {
                 if (start != end) {
                     editable.delete(kotlin.math.min(start, end), kotlin.math.max(start, end))
                 } else if (cursor > 0) {
-                    editable.delete(cursor - 1, cursor)
+                    deletePreviousGrapheme(editable, cursor)
                 } else if (editable.isEmpty()) {
                     handleBackspace()
                 }
             }
             "مسافة" -> editable.insert(cursor, " ")
-            "↵" -> editable.insert(cursor, "\n")
+            "↵" -> {
+                if (editable.count { it == '\n' } < 1) {
+                    editable.insert(cursor, "\n")
+                }
+            }
             else -> {
                 editable.insert(cursor, key)
                 consumeShiftIfNeeded()
             }
         }
-        updateSuggestions(edit.text.toString())
+        repairBuffer = editable.toString()
+        scheduleSuggestionRefresh()
+    }
+
+    private fun deletePreviousGrapheme(editable: Editable, cursor: Int) {
+        val iterator = BreakIterator.getCharacterInstance()
+        iterator.setText(editable.toString())
+        val boundary = iterator.preceding(cursor)
+        if (boundary != BreakIterator.DONE && boundary < cursor) {
+            editable.delete(boundary, cursor)
+            return
+        }
+        val fallback = Character.offsetByCodePoints(editable, cursor, -1)
+        editable.delete(fallback, cursor)
     }
 
     private fun commitAndRemember(text: String) {
@@ -1281,7 +1543,7 @@ class KeyboardImeService : InputMethodService() {
         if (repairExpanded) {
             val edit = repairEditText ?: return
             replaceOrAppendTokenInEditText(edit, word)
-            updateSuggestions(edit.text.toString())
+            scheduleSuggestionRefresh(0L)
             return
         }
         val current = currentSuggestionSource()
@@ -1338,7 +1600,21 @@ class KeyboardImeService : InputMethodService() {
     private fun handleBackspace() {
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
         currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL))
-        if (typedText.isNotEmpty()) typedText.deleteCharAt(typedText.length - 1)
+        if (typedText.isNotEmpty()) deleteLastTrackedGrapheme()
+    }
+
+    private fun deleteLastTrackedGrapheme() {
+        val value = typedText.toString()
+        if (value.isEmpty()) return
+        val iterator = BreakIterator.getCharacterInstance()
+        iterator.setText(value)
+        val boundary = iterator.preceding(value.length)
+        if (boundary != BreakIterator.DONE && boundary < value.length) {
+            typedText.delete(boundary, value.length)
+        } else {
+            val fallback = Character.offsetByCodePoints(value, value.length, -1)
+            typedText.delete(fallback, value.length)
+        }
     }
 
     private fun handleEnter() {
@@ -1348,21 +1624,21 @@ class KeyboardImeService : InputMethodService() {
     }
 
     /**
-     * Refresh from the local buffer immediately, then reconcile once Android has
-     * committed the character to the editor. This keeps dictionary suggestions
-     * live on every key instead of waiting for a space/boundary event.
+     * Key input stays immediate. Dictionary lookup and row rebuilding are coalesced
+     * into one refresh after rapid consecutive taps instead of running twice per key.
      */
     private fun refreshSuggestionsAfterLocalEdit() {
-        val localSnapshot = typedText.toString()
-        updateSuggestions(localSnapshot)
+        scheduleSuggestionRefresh()
+    }
 
+    private fun scheduleSuggestionRefresh(delayMillis: Long = 36L) {
         suggestionRefreshRunnable?.let(suggestionRefreshHandler::removeCallbacks)
         val runnable = Runnable {
             suggestionRefreshRunnable = null
             updateSuggestions(currentSuggestionSource())
         }
         suggestionRefreshRunnable = runnable
-        suggestionRefreshHandler.postDelayed(runnable, 24L)
+        suggestionRefreshHandler.postDelayed(runnable, delayMillis)
     }
 
     private fun pasteToRepairBox() {
@@ -1372,7 +1648,7 @@ class KeyboardImeService : InputMethodService() {
             repairBuffer = text
             repairEditText?.setText(text)
             repairEditText?.setSelection(repairEditText?.text?.length ?: 0)
-            updateSuggestions(text)
+            scheduleSuggestionRefresh(0L)
         }
     }
 
