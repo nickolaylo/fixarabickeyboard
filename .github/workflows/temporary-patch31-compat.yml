@@ -1,0 +1,39 @@
+name: Temporary Patch 31 Compatibility Fix
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/patch-31-performance-emoji-panel-manual-lines'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/patch-31-performance-emoji-panel-manual-lines
+          fetch-depth: 0
+
+      - name: Apply compatibility fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("android/app/src/main/kotlin/com/souadachak/fixarabickeyboard/keyboard/KeyboardImeService.kt")
+          text = path.read_text(encoding="utf-8")
+          old = "import android.icu.text.BreakIterator"
+          new = "import java.text.BreakIterator"
+          if old not in text:
+              raise RuntimeError("Expected Android ICU import was not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          rm -f tools/patch31-compat-trigger.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Patch 31: keep emoji deletion compatible with older Android"
+          git push origin HEAD:agent/patch-31-performance-emoji-panel-manual-lines
