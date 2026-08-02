@@ -1,0 +1,36 @@
+name: Fix Patch 28 Kotlin Line Split
+
+on:
+  push:
+    branches:
+      - agent/patch-28-magic-compose-close-and-multiline
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Patch 28 branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/patch-28-magic-compose-close-and-multiline
+          fetch-depth: 0
+
+      - name: Apply Kotlin line split fix
+        run: python3 tools/fix_patch28_line_split.py
+
+      - name: Remove temporary automation files
+        run: |
+          rm tools/fix_patch28_line_split.py
+          rm .github/workflows/fix-patch28-line-split.yml
+
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix Patch 28 multiline height compilation"
+          git push
