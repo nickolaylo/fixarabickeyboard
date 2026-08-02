@@ -262,7 +262,9 @@ class KeyboardImeService : InputMethodService() {
             setSingleLine(false)
             setHorizontallyScrolling(false)
             isVerticalScrollBarEnabled = true
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             setTextColor(KeyboardColors.text)
             setHintTextColor(KeyboardColors.textMuted)
             includeFontPadding = false
@@ -621,15 +623,65 @@ class KeyboardImeService : InputMethodService() {
 
     private fun LinearLayout.addTextModeBottomRow(symbolsLabel: String, comma: String, period: String) {
         addView(makeActionKey(symbolsLabel, KeyboardColors.specialKey, 16f) { switchMode(KeyboardMode.SYMBOLS_1) }, bottomParams(dp(50)))
-        addView(makeActionKey(comma, KeyboardColors.specialKey, 17f) { handleKey(comma) }, bottomParams(dp(34)))
-        if (repairExpanded) {
-            addView(makeActionKey("↵", KeyboardColors.specialKey, 18f) { handleKey("↵") }, bottomParams(dp(38)))
-        } else {
-            addView(makeBottomIconButton(R.drawable.ic_keyboard_emoji) { handleKey("🙂") }, bottomParams(dp(38)))
-        }
+        addView(makeCommaEmojiKey(comma), bottomParams(dp(38)))
         addView(makeSpaceKey(), LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
         addView(makeActionKey(period, KeyboardColors.specialKey, 17f) { handleKey(period) }, bottomParams(dp(34)))
         addView(makePrimaryActionButton(), bottomParams(dp(64)))
+        if (repairExpanded) {
+            addView(makeActionKey("↵", KeyboardColors.specialKey, 18f) { handleKey("↵") }, bottomParams(dp(38)))
+        }
+    }
+
+    private fun makeCommaEmojiKey(comma: String): FrameLayout {
+        return FrameLayout(this).apply {
+            background = roundedBackground(KeyboardColors.specialKey, dp(11))
+            isClickable = true
+            isFocusable = true
+            contentDescription = moreToolLabel(
+                "فاصلة، ضغط مطول لإدخال رمز تعبيري",
+                "Comma, long press for emoji",
+                "Virgule, appui long pour emoji"
+            )
+
+            val commaLabel = TextView(this@KeyboardImeService).apply {
+                text = comma
+                gravity = Gravity.CENTER
+                textSize = 17f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                setTextColor(KeyboardColors.text)
+                includeFontPadding = false
+            }
+            val emojiHint = TextView(this@KeyboardImeService).apply {
+                text = "🙂"
+                gravity = Gravity.CENTER
+                textSize = 8f
+                setTextColor(KeyboardColors.disabledIcon)
+                includeFontPadding = false
+                alpha = 0.58f
+            }
+
+            addView(
+                commaLabel,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+            addView(
+                emojiHint,
+                FrameLayout.LayoutParams(dp(16), dp(16), Gravity.TOP or Gravity.END).apply {
+                    topMargin = dp(2)
+                    rightMargin = dp(2)
+                }
+            )
+
+            setOnClickListener { handleKey(comma) }
+            setOnLongClickListener {
+                handleKey("🙂")
+                true
+            }
+            setOnTouchListener { view, event -> animatePress(view, event, null, false) }
+        }
     }
 
     private fun makePrimaryActionButton(): View {
@@ -987,7 +1039,9 @@ class KeyboardImeService : InputMethodService() {
 
     private fun toggleRepairExpanded() {
         if (repairExpanded) {
-            repairBuffer = repairEditText?.text?.toString() ?: repairBuffer
+            // Patch 30: closing conversion mode discards the draft by design.
+            repairBuffer = ""
+            repairEditText?.text?.clear()
         }
         repairExpanded = !repairExpanded
         morePanelExpanded = false
@@ -1248,19 +1302,33 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun replaceOrAppendTokenInEditText(edit: EditText, word: String) {
-        val text = edit.text.toString()
-        val shouldAppend = text.isEmpty() || text.last().isWhitespace() || isDictionarySeparator(text.last())
-        val nextText = if (shouldAppend) {
-            "$text$word "
-        } else {
-            val trimmedEnd = text.trimEnd()
-            val lastSpace = trimmedEnd.lastIndexOf(' ')
-            val prefix = if (lastSpace >= 0) trimmedEnd.substring(0, lastSpace + 1) else ""
-            "$prefix$word "
+        val editable = edit.text ?: return
+        val selectionStart = edit.selectionStart.coerceIn(0, editable.length)
+        val selectionEnd = edit.selectionEnd.coerceIn(0, editable.length)
+        val selectionMin = kotlin.math.min(selectionStart, selectionEnd)
+        val selectionMax = kotlin.math.max(selectionStart, selectionEnd)
+
+        var replaceStart = selectionMin
+        var replaceEnd = selectionMax
+        if (selectionMin == selectionMax) {
+            while (replaceStart > 0) {
+                val previous = editable[replaceStart - 1]
+                if (previous.isWhitespace() || isDictionarySeparator(previous)) break
+                replaceStart -= 1
+            }
+            while (replaceEnd < editable.length) {
+                val next = editable[replaceEnd]
+                if (next.isWhitespace() || isDictionarySeparator(next)) break
+                replaceEnd += 1
+            }
         }
-        edit.setText(nextText)
-        edit.setSelection(edit.text.length)
-        repairBuffer = edit.text.toString()
+
+        val hasFollowingWhitespace = replaceEnd < editable.length && editable[replaceEnd].isWhitespace()
+        val replacement = if (hasFollowingWhitespace) word else "$word "
+        editable.replace(replaceStart, replaceEnd, replacement)
+        val nextCursor = (replaceStart + replacement.length).coerceAtMost(editable.length)
+        edit.setSelection(nextCursor)
+        repairBuffer = editable.toString()
     }
 
     private fun isDictionarySeparator(char: Char): Boolean {
