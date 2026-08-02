@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Replace the fragile character-literal split with a platform-safe line sequence.
 path = Path("android/app/src/main/kotlin/com/souadachak/fixarabickeyboard/keyboard/KeyboardImeService.kt")
 text = path.read_text(encoding="utf-8")
 old = ".split('\\n')\n            .sumOf"
