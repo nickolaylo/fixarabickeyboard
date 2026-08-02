@@ -235,8 +235,7 @@ class KeyboardImeService : InputMethodService() {
 
     private fun repairSlotHeightForText(text: String): Int {
         val lines = text
-            .split('
-')
+            .lineSequence()
             .sumOf { line -> ((line.length / 34) + 1).coerceAtLeast(1) }
             .coerceIn(1, 4)
         return when (lines) {
