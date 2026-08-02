@@ -1,7 +1,7 @@
 name: Temporary Apply Patch 31
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -42,6 +42,7 @@ jobs:
 
           rm -f tools/apply_patch31.py
           rm -f tools/patch31-trigger.txt
+          rm -f tools/patch31-trigger-2.txt
           rm -f .github/workflows/apply-patch31.yml
 
           git config user.name "github-actions[bot]"
