@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import java.text.BreakIterator
 import android.graphics.Color
 import android.graphics.Typeface
@@ -66,7 +67,10 @@ class KeyboardImeService : InputMethodService() {
 
     private companion object {
         const val SUGGESTION_CONTEXT_LIMIT = 160
-        const val KEY_AREA_HEIGHT_DP = 264
+        const val NUMBER_ROW_MODE_KEY = "number_row_mode"
+        const val NUMBER_ROW_ALWAYS = "always"
+        const val NUMBER_ROW_PORTRAIT_ONLY = "portrait_only"
+        const val NUMBER_ROW_HIDDEN = "hidden"
         const val RECENT_EMOJIS_KEY = "recent_emojis"
         const val EMOJI_SEPARATOR = "\u001F"
 
@@ -136,7 +140,7 @@ class KeyboardImeService : InputMethodService() {
             clipToPadding = false
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(KEY_AREA_HEIGHT_DP)
+                dp(currentKeyAreaHeightDp())
             )
         }
         keyAreaContainer = keyArea
@@ -501,11 +505,45 @@ class KeyboardImeService : InputMethodService() {
         return if (sourceText.isNotBlank()) SmartRowMode.DICTIONARY else SmartRowMode.TOOLS
     }
 
+    private fun isLandscapeKeyboard(): Boolean {
+        return resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    }
+
+    private fun shouldShowNumberRow(): Boolean {
+        return when (
+            prefs.getString(NUMBER_ROW_MODE_KEY, NUMBER_ROW_PORTRAIT_ONLY)
+                ?: NUMBER_ROW_PORTRAIT_ONLY
+        ) {
+            NUMBER_ROW_ALWAYS -> true
+            NUMBER_ROW_HIDDEN -> false
+            else -> !isLandscapeKeyboard()
+        }
+    }
+
+    private fun currentKeyAreaHeightDp(): Int {
+        val showNumberRow = shouldShowNumberRow()
+        return when {
+            isLandscapeKeyboard() && showNumberRow -> 226
+            isLandscapeKeyboard() -> 190
+            showNumberRow -> 264
+            else -> 215
+        }
+    }
+
+    private fun numberKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 38 else 44)
+    private fun letterKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 40 else 44)
+    private fun functionKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 44 else 48)
+    private fun bottomKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 46 else 52)
+    private fun rowTopPadding(): Int = dp(if (isLandscapeKeyboard()) 1 else 2)
+    private fun rowBottomPadding(): Int = dp(if (isLandscapeKeyboard()) 2 else 3)
+    private fun bottomRowTopPadding(): Int = dp(if (isLandscapeKeyboard()) 2 else 4)
+
     private fun makeKeyboardKeyArea(): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(Color.TRANSPARENT)
-            addView(makeNumberRow())
+            if (shouldShowNumberRow()) addView(makeNumberRow())
             activeRows().forEachIndexed { index, row ->
                 addView(makeLetterRow(row, showBackspace = index == 2))
             }
@@ -792,9 +830,9 @@ class KeyboardImeService : InputMethodService() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(2), 0, dp(3))
+            setPadding(0, rowTopPadding(), 0, rowBottomPadding())
             listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").forEach { key ->
-                addView(makeActionKey(key, KeyboardColors.key, 19f) { handleKey(key) }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
+                addView(makeActionKey(key, KeyboardColors.key, 19f) { handleKey(key) }, LinearLayout.LayoutParams(0, numberKeyHeight(), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
             }
         }
     }
@@ -803,16 +841,16 @@ class KeyboardImeService : InputMethodService() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(2), 0, dp(3))
+            setPadding(0, rowTopPadding(), 0, rowBottomPadding())
             if (showBackspace && isLatinMode()) {
-                addView(makeShiftKey(), LinearLayout.LayoutParams(0, dp(48), 1.12f).apply { setMargins(dp(2), 0, dp(2), 0) })
+                addView(makeShiftKey(), LinearLayout.LayoutParams(0, functionKeyHeight(), 1.12f).apply { setMargins(dp(2), 0, dp(2), 0) })
             }
             keys.forEach { key ->
                 val label = displayLetter(key)
-                addView(makeLetterKey(label) { handleKey(label) }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
+                addView(makeLetterKey(label) { handleKey(label) }, LinearLayout.LayoutParams(0, letterKeyHeight(), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
             }
             if (showBackspace) {
-                addView(makeBackspaceKey(), LinearLayout.LayoutParams(0, dp(48), 1.12f).apply { setMargins(dp(2), 0, dp(2), 0) })
+                addView(makeBackspaceKey(), LinearLayout.LayoutParams(0, functionKeyHeight(), 1.12f).apply { setMargins(dp(2), 0, dp(2), 0) })
             }
         }
     }
@@ -821,7 +859,7 @@ class KeyboardImeService : InputMethodService() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, 0)
+            setPadding(0, bottomRowTopPadding(), 0, 0)
 
             when (keyboardMode) {
                 KeyboardMode.ARABIC -> addTextModeBottomRow(symbolsLabel = "?123", comma = "،", period = ".")
@@ -831,7 +869,7 @@ class KeyboardImeService : InputMethodService() {
                     addView(makeActionKey(languageReturnLabel(), KeyboardColors.specialKey, 15f) { switchMode(lastLetterMode) }, bottomParams(dp(50)))
                     addView(makeActionKey("،", KeyboardColors.specialKey, 17f) { handleKey("،") }, bottomParams(dp(34)))
                     addView(makeActionKey("1/2", KeyboardColors.specialKey, 14f) { switchMode(KeyboardMode.SYMBOLS_2) }, bottomParams(dp(38)))
-                    addView(makeSpaceKey(), LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
+                    addView(makeSpaceKey(), LinearLayout.LayoutParams(0, bottomKeyHeight(), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
                     addView(makeActionKey(".", KeyboardColors.specialKey, 17f) { handleKey(".") }, bottomParams(dp(34)))
                     addView(makePrimaryActionButton(), bottomParams(dp(64)))
                 }
@@ -839,7 +877,7 @@ class KeyboardImeService : InputMethodService() {
                     addView(makeActionKey(languageReturnLabel(), KeyboardColors.specialKey, 15f) { switchMode(lastLetterMode) }, bottomParams(dp(50)))
                     addView(makeActionKey("«", KeyboardColors.specialKey, 17f) { handleKey("«") }, bottomParams(dp(34)))
                     addView(makeActionKey("2/2", KeyboardColors.specialKey, 14f) { switchMode(KeyboardMode.SYMBOLS_1) }, bottomParams(dp(38)))
-                    addView(makeSpaceKey(), LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
+                    addView(makeSpaceKey(), LinearLayout.LayoutParams(0, bottomKeyHeight(), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
                     addView(makeActionKey("»", KeyboardColors.specialKey, 17f) { handleKey("»") }, bottomParams(dp(34)))
                     addView(makePrimaryActionButton(), bottomParams(dp(64)))
                 }
@@ -850,7 +888,7 @@ class KeyboardImeService : InputMethodService() {
     private fun LinearLayout.addTextModeBottomRow(symbolsLabel: String, comma: String, period: String) {
         addView(makeActionKey(symbolsLabel, KeyboardColors.specialKey, 16f) { switchMode(KeyboardMode.SYMBOLS_1) }, bottomParams(dp(50)))
         addView(makeCommaEmojiKey(comma), bottomParams(dp(38)))
-        addView(makeSpaceKey(), LinearLayout.LayoutParams(0, dp(52), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
+        addView(makeSpaceKey(), LinearLayout.LayoutParams(0, bottomKeyHeight(), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
         addView(makeActionKey(period, KeyboardColors.specialKey, 17f) { handleKey(period) }, bottomParams(dp(34)))
         if (repairExpanded) {
             addView(makeActionKey("↵", KeyboardColors.specialKey, 18f) { handleKey("↵") }, bottomParams(dp(38)))
@@ -928,7 +966,7 @@ class KeyboardImeService : InputMethodService() {
         }
     }
 
-    private fun bottomParams(width: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(width, dp(52)).apply { setMargins(dp(2), 0, dp(2), 0) }
+    private fun bottomParams(width: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(width, bottomKeyHeight()).apply { setMargins(dp(2), 0, dp(2), 0) }
 
     private fun makeLetterKey(label: String, onClick: () -> Unit): TextView = makeBaseKey(label, KeyboardColors.key, KeyboardColors.text, 20f, Typeface.NORMAL, true, onClick)
 

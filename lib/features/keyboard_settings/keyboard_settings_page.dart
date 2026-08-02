@@ -20,6 +20,63 @@ class _KeyboardSettingsPageState extends State<KeyboardSettingsPage> {
   final store = SettingsStore.instance;
 
   @override
+  void initState() {
+    super.initState();
+    store.loadNumberRowMode().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  String _numberRowModeLabel(AppStrings strings, NumberRowMode mode) {
+    return switch (mode) {
+      NumberRowMode.always => strings.numberRowAlways,
+      NumberRowMode.portraitOnly => strings.numberRowPortraitOnly,
+      NumberRowMode.hidden => strings.numberRowHidden,
+    };
+  }
+
+  Future<void> _chooseNumberRowMode(AppStrings strings) async {
+    final selected = await showModalBottomSheet<NumberRowMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.format_list_numbered_rounded),
+                title: Text(
+                  strings.numberRowSetting,
+                  style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                subtitle: Text(strings.numberRowSettingBody),
+              ),
+              for (final mode in NumberRowMode.values)
+                ListTile(
+                  leading: Icon(
+                    mode == store.numberRowMode
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                  ),
+                  title: Text(_numberRowModeLabel(strings, mode)),
+                  onTap: () => Navigator.of(sheetContext).pop(mode),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected == null || selected == store.numberRowMode) return;
+    await store.setNumberRowMode(selected);
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     final strings = AppStrings.of(context);
     final content = ListView(
@@ -45,6 +102,21 @@ class _KeyboardSettingsPageState extends State<KeyboardSettingsPage> {
                 onChanged: (value) {
                   setState(() => store.correctionEnabled = value);
                 },
+              ),
+              const Divider(),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 5,
+                ),
+                leading: const Icon(Icons.format_list_numbered_rounded),
+                title: Text(strings.numberRowSetting),
+                subtitle: Text(
+                  '${strings.numberRowSettingBody}
+${_numberRowModeLabel(strings, store.numberRowMode)}',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => _chooseNumberRowMode(strings),
               ),
               const Divider(),
               SwitchListTile.adaptive(
