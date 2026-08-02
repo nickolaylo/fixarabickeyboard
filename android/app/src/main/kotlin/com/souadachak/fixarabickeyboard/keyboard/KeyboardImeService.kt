@@ -143,9 +143,9 @@ class KeyboardImeService : InputMethodService() {
         lastDictionaryVisible = sourceText.isNotBlank()
         lastSmartRowMode = smartMode
 
-        val smartSlotHeight = dp(49)
-        val repairSlotHeight = dp(52)
-        val totalHeight = smartSlotHeight + if (repairExpanded) repairSlotHeight + dp(2) else 0
+        val smartSlotHeight = dp(43)
+        val repairSlotHeight = dp(45)
+        val totalHeight = smartSlotHeight + if (repairExpanded) repairSlotHeight + dp(1) else 0
 
         return FrameLayout(this).apply {
             stableTopArea = this
@@ -173,7 +173,7 @@ class KeyboardImeService : InputMethodService() {
                     LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         repairSlotHeight
-                    ).apply { bottomMargin = dp(2) }
+                    ).apply { bottomMargin = dp(1) }
                 )
             } else {
                 repairTopSlotView = null
@@ -222,7 +222,7 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun currentRepairSlotHeight(): Int {
-        val minimumRepairSlotHeight = dp(58)
+        val minimumRepairSlotHeight = dp(45)
         if (!repairExpanded) {
             // Patch 05: keep the physical slot height reserved even while the repair row is hidden.
             // This prevents the IME window from changing height when the wand is toggled.
@@ -237,18 +237,18 @@ class KeyboardImeService : InputMethodService() {
         val estimatedLines = (text.length / 34) + 1
         val lines = kotlin.math.max(explicitLines, estimatedLines).coerceIn(1, 4)
         return when (lines) {
-            1 -> dp(58)
-            2 -> dp(82)
-            3 -> dp(106)
-            else -> dp(130)
+            1 -> dp(45)
+            2 -> dp(69)
+            3 -> dp(93)
+            else -> dp(117)
         }
     }
 
     private fun makeRepairInputRow(): LinearLayout {
         repairEditText = EditText(this).apply {
-            hint = "اكتب بالعربية هنا…"
+            hint = "اكتب النص هنا لتحويله."
             gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
-            textSize = 17f
+            textSize = 16f
             minLines = 1
             maxLines = 1
             setSingleLine(true)
@@ -256,9 +256,9 @@ class KeyboardImeService : InputMethodService() {
             setTextColor(KeyboardColors.text)
             setHintTextColor(KeyboardColors.textMuted)
             includeFontPadding = false
-            setPadding(dp(14), dp(6), dp(14), dp(6))
-            minHeight = dp(44)
-            background = roundedBackground(KeyboardColors.repairField, dp(14))
+            setPadding(dp(12), dp(2), dp(12), dp(2))
+            minHeight = dp(38)
+            background = roundedBackground(KeyboardColors.repairField, dp(12))
             setText(repairBuffer)
             setSelection(text?.length ?: 0)
             setShowSoftInputOnFocus(false)
@@ -280,11 +280,11 @@ class KeyboardImeService : InputMethodService() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(3), dp(4), dp(3))
-            background = roundedStrokeBackground(KeyboardColors.panel, KeyboardColors.repairStroke, dp(16), dp(1))
+            setPadding(dp(2), dp(2), dp(2), dp(2))
+            background = roundedStrokeBackground(KeyboardColors.panel, KeyboardColors.repairStroke, dp(14), dp(1))
             clipChildren = false
             clipToPadding = false
-            addView(repairEditText, LinearLayout.LayoutParams(0, dp(44), 1f))
+            addView(repairEditText, LinearLayout.LayoutParams(0, dp(38), 1f))
         }
     }
 
@@ -308,44 +308,44 @@ class KeyboardImeService : InputMethodService() {
             suggestionsRow = if (mode == SmartRowMode.DICTIONARY) this else null
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(2), 0, dp(3))
+            setPadding(0, 0, 0, dp(1))
             background = roundedStrokeBackground(KeyboardColors.panel, KeyboardColors.panelStroke, dp(9), dp(1))
 
             addView(
                 makeMoreToolsButton(),
-                LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(0, 0, dp(2), 0) }
+                LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(0, 0, dp(1), 0) }
             )
 
             when (mode) {
                 SmartRowMode.TOOLS -> addToolIconsToSmartRow(hasClipboardText)
                 SmartRowMode.DICTIONARY -> addDictionaryContentToSmartRow(suggestions)
-                SmartRowMode.HIDDEN -> addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(44), 1f))
+                SmartRowMode.HIDDEN -> addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(40), 1f))
             }
 
             if (!repairExpanded) {
                 addView(
                     makeIconButton(R.drawable.ic_keyboard_magic_wand, KeyboardColors.toolbarIcon) { toggleRepairExpanded() },
-                    LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(dp(2), 0, 0, 0) }
+                    LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(dp(1), 0, 0, 0) }
                 )
             }
         }
     }
 
     private fun LinearLayout.addToolIconsToSmartRow(hasClipboardText: Boolean) {
-        addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(44), 1f))
+        addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(40), 1f))
         addView(
             makeIconButton(R.drawable.ic_keyboard_paste, if (hasClipboardText) KeyboardColors.toolbarIcon else KeyboardColors.disabledIcon, enabled = hasClipboardText) { pasteToRepairBox() },
-            LinearLayout.LayoutParams(dp(44), dp(44)).apply { setMargins(dp(2), 0, dp(2), 0) }
+            LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(dp(1), 0, dp(1), 0) }
         )
         addView(
             makeIconButton(R.drawable.ic_keyboard_emoji, KeyboardColors.toolbarIcon) { handleKey("🙂") },
-            LinearLayout.LayoutParams(dp(44), dp(44)).apply { setMargins(dp(2), 0, dp(2), 0) }
+            LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(dp(1), 0, dp(1), 0) }
         )
         addView(
             makeIconButton(R.drawable.ic_keyboard_settings, KeyboardColors.toolbarIcon) { openAppSettings() },
-            LinearLayout.LayoutParams(dp(44), dp(44)).apply { setMargins(dp(2), 0, dp(2), 0) }
+            LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(dp(1), 0, dp(1), 0) }
         )
-        addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(44), 1f))
+        addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(40), 1f))
     }
 
     private fun LinearLayout.addDictionaryContentToSmartRow(suggestions: List<SuggestionItem>) {
@@ -360,11 +360,11 @@ class KeyboardImeService : InputMethodService() {
                     onClick = { commitSuggestion(suggestion.commitText) },
                     onLongClick = onLongClick
                 ),
-                LinearLayout.LayoutParams(0, dp(44), 1f).apply { setMargins(dp(2), 0, dp(2), 0) }
+                LinearLayout.LayoutParams(0, dp(38), 1f).apply { setMargins(dp(2), dp(1), dp(2), dp(1)) }
             )
         }
         repeat((3 - visibleSuggestions.size).coerceAtLeast(0)) {
-            addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(44), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
+            addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(38), 1f).apply { setMargins(dp(2), dp(1), dp(2), dp(1)) })
         }
     }
 
@@ -382,7 +382,7 @@ class KeyboardImeService : InputMethodService() {
         if (trailingWand != null) {
             row.addView(
                 trailingWand,
-                LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(dp(2), 0, 0, 0) }
+                LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(dp(1), 0, 0, 0) }
             )
         }
     }
@@ -575,7 +575,7 @@ class KeyboardImeService : InputMethodService() {
     ): TextView {
         return makeBaseKey(
             label,
-            Color.TRANSPARENT,
+            KeyboardColors.key,
             KeyboardColors.text,
             15f,
             Typeface.NORMAL,
@@ -973,7 +973,7 @@ class KeyboardImeService : InputMethodService() {
             index,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(49)
+                dp(43)
             )
         )
         smartContent.alpha = 0f
@@ -1204,13 +1204,29 @@ class KeyboardImeService : InputMethodService() {
             repairEditText?.setSelection(repairEditText?.text?.length ?: 0)
             return
         }
-        val fixedText = CorrectionEngine.fix(rawText)
-        currentInputConnection?.commitText(fixedText, 1)
+
+        val fixedText = CorrectionEngine.fix(rawText).trim()
+        if (fixedText.isEmpty()) return
+        val previousContext = currentInputConnection
+            ?.getTextBeforeCursor(8, 0)
+            ?.toString()
+            .orEmpty()
+        val boundary = if (needsBoundarySpace(previousContext, fixedText)) " " else ""
+        currentInputConnection?.commitText(boundary + fixedText, 1)
         coinManager.consumeFixCoinIfNeeded()
         repairBuffer = ""
         repairEditText?.setText("")
         typedText.clear()
         updateSuggestions()
+    }
+
+    private fun needsBoundarySpace(previousText: String, nextText: String): Boolean {
+        if (previousText.isEmpty() || nextText.isEmpty()) return false
+        val previous = previousText.lastOrNull { Character.getType(it) != Character.FORMAT.toInt() } ?: return false
+        val next = nextText.firstOrNull { Character.getType(it) != Character.FORMAT.toInt() } ?: return false
+        if (previous.isWhitespace() || next.isWhitespace()) return false
+        val closingPunctuation = setOf('،', ',', '.', '؟', '?', '!', '؛', ':', ';', ')', ']', '}', '»')
+        return next !in closingPunctuation
     }
 
     private fun updateSuggestions(source: String = currentSuggestionSource()) {
