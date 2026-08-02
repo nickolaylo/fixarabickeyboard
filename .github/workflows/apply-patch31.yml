@@ -29,3 +29,5 @@ jobs:
           git add -A
           git commit -m "Patch 31: improve typing and add emoji panel"
           git push
+
+# Retry trigger after workflow creation
