@@ -55,6 +55,7 @@ class KeyboardImeService : InputMethodService() {
     private var repairOverlayView: View? = null
     private val deleteRepeatHandler = Handler(Looper.getMainLooper())
     private var deleteRepeatRunnable: Runnable? = null
+    private var deleteRepeatCount: Int = 0
     private val suggestionRefreshHandler = Handler(Looper.getMainLooper())
     private var suggestionRefreshRunnable: Runnable? = null
 
@@ -260,6 +261,13 @@ class KeyboardImeService : InputMethodService() {
             background = roundedBackground(KeyboardColors.repairField, dp(14))
             setText(repairBuffer)
             setSelection(text?.length ?: 0)
+            setShowSoftInputOnFocus(false)
+            isCursorVisible = true
+            post {
+                requestFocus()
+                setSelection(text?.length ?: 0)
+                isCursorVisible = true
+            }
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(text: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(text: CharSequence?, start: Int, before: Int, count: Int) {
@@ -314,10 +322,12 @@ class KeyboardImeService : InputMethodService() {
                 SmartRowMode.HIDDEN -> addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(44), 1f))
             }
 
-            addView(
-                makeIconButton(R.drawable.ic_keyboard_magic_wand, if (repairExpanded) KeyboardColors.onAccent else KeyboardColors.toolbarIcon) { toggleRepairExpanded() },
-                LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(dp(2), 0, 0, 0) }
-            )
+            if (!repairExpanded) {
+                addView(
+                    makeIconButton(R.drawable.ic_keyboard_magic_wand, KeyboardColors.toolbarIcon) { toggleRepairExpanded() },
+                    LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(dp(2), 0, 0, 0) }
+                )
+            }
         }
     }
 
@@ -360,14 +370,21 @@ class KeyboardImeService : InputMethodService() {
 
     private fun rebuildDictionaryContent(suggestions: List<SuggestionItem>) {
         val row = suggestionsRow ?: return
-        row.removeViews(1, (row.childCount - 2).coerceAtLeast(0))
-        val wand = row.getChildAt(row.childCount - 1)
-        row.removeView(wand)
+        val trailingWand = if (!repairExpanded && row.childCount > 1) {
+            row.getChildAt(row.childCount - 1).also(row::removeView)
+        } else {
+            null
+        }
+        if (row.childCount > 1) {
+            row.removeViews(1, row.childCount - 1)
+        }
         row.addDictionaryContentToSmartRow(suggestions)
-        row.addView(
-            wand,
-            LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(dp(2), 0, 0, 0) }
-        )
+        if (trailingWand != null) {
+            row.addView(
+                trailingWand,
+                LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(dp(2), 0, 0, 0) }
+            )
+        }
     }
 
     private fun smartRowMode(sourceText: String): SmartRowMode {
@@ -526,7 +543,13 @@ class KeyboardImeService : InputMethodService() {
             scaleType = android.widget.ImageView.ScaleType.CENTER
             setPadding(dp(14), dp(14), dp(14), dp(14))
             contentDescription = moreToolLabel("تنفيذ الإصلاح", "Apply repair", "Appliquer la correction")
-            setOnClickListener { commitFixedRepairText() }
+            setOnClickListener {
+                if (repairBuffer.isBlank()) {
+                    toggleRepairExpanded()
+                } else {
+                    commitFixedRepairText()
+                }
+            }
             setOnTouchListener { view, event -> animatePress(view, event, null, false) }
         }
     }
@@ -811,18 +834,26 @@ class KeyboardImeService : InputMethodService() {
 
     private fun startDeleteRepeat() {
         stopDeleteRepeat()
+        deleteRepeatCount = 0
         deleteRepeatRunnable = object : Runnable {
             override fun run() {
                 handleKey("⌫")
-                deleteRepeatHandler.postDelayed(this, 55L)
+                deleteRepeatCount += 1
+                val nextDelay = when {
+                    deleteRepeatCount < 6 -> 42L
+                    deleteRepeatCount < 16 -> 30L
+                    else -> 20L
+                }
+                deleteRepeatHandler.postDelayed(this, nextDelay)
             }
         }
-        deleteRepeatHandler.postDelayed(deleteRepeatRunnable!!, 330L)
+        deleteRepeatHandler.postDelayed(deleteRepeatRunnable!!, 260L)
     }
 
     private fun stopDeleteRepeat() {
         deleteRepeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
         deleteRepeatRunnable = null
+        deleteRepeatCount = 0
     }
 
     private fun toggleMorePanel() {
@@ -1036,6 +1067,8 @@ class KeyboardImeService : InputMethodService() {
                     editable.delete(kotlin.math.min(start, end), kotlin.math.max(start, end))
                 } else if (cursor > 0) {
                     editable.delete(cursor - 1, cursor)
+                } else if (editable.isEmpty()) {
+                    handleBackspace()
                 }
             }
             "مسافة" -> editable.insert(cursor, " ")
