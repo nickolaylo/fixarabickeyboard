@@ -1,0 +1,36 @@
+name: Apply Patch 27 Magic Compose Polish
+
+on:
+  push:
+    branches:
+      - agent/patch-27-magic-compose-spacing-compact-suggestions
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Patch 27 branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/patch-27-magic-compose-spacing-compact-suggestions
+          fetch-depth: 0
+
+      - name: Apply Patch 27 refinement
+        run: python3 tools/apply_patch27_magic_compose_polish.py
+
+      - name: Remove temporary automation files
+        run: |
+          rm tools/apply_patch27_magic_compose_polish.py
+          rm .github/workflows/apply-patch27-magic-compose-polish.yml
+
+      - name: Commit Patch 27
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Patch 27: separate messages and compact compose bars"
+          git push
