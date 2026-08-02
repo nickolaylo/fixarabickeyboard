@@ -41,6 +41,7 @@ jobs:
           PY
 
           rm -f tools/apply_patch31.py
+          rm -f tools/patch31-trigger.txt
           rm -f .github/workflows/apply-patch31.yml
 
           git config user.name "github-actions[bot]"
