@@ -46,6 +46,7 @@ class KeyboardImeService : InputMethodService() {
     private var shiftState: ShiftState = ShiftState.OFF
     private var lastRepairSlotHeight: Int = 0
     private var stableTopArea: FrameLayout? = null
+    private var topStack: LinearLayout? = null
     private var smartTopSlotView: View? = null
     private var repairTopSlotView: View? = null
     private var repairRowContainer: FrameLayout? = null
@@ -136,6 +137,9 @@ class KeyboardImeService : InputMethodService() {
         lastSmartRowMode = smartMode
 
         val smartSlotHeight = dp(49)
+        val repairSlotHeight = dp(52)
+        val totalHeight = smartSlotHeight + if (repairExpanded) repairSlotHeight + dp(2) else 0
+
         return FrameLayout(this).apply {
             stableTopArea = this
             setBackgroundColor(Color.TRANSPARENT)
@@ -143,38 +147,49 @@ class KeyboardImeService : InputMethodService() {
             clipToPadding = false
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                smartSlotHeight
+                totalHeight
             )
 
-            // Patch 09: a real fixed TopSlot.
-            // Smart row and repair row are children of the same FrameLayout,
-            // so they overlap in the same coordinates instead of stacking vertically.
+            val stack = LinearLayout(this@KeyboardImeService).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(Color.TRANSPARENT)
+                clipChildren = false
+                clipToPadding = false
+            }
+            topStack = stack
+
+            if (repairExpanded) {
+                val repairContent = makeRepairInputRow()
+                repairTopSlotView = repairContent
+                stack.addView(
+                    repairContent,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        repairSlotHeight
+                    ).apply { bottomMargin = dp(2) }
+                )
+            } else {
+                repairTopSlotView = null
+                repairEditText = null
+            }
+
             val smartContent = makeSmartRow(smartMode, dictionarySuggestions(sourceText))
             smartTopSlotView = smartContent
-            addView(
+            stack.addView(
                 smartContent,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    smartSlotHeight,
-                    Gravity.TOP
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    smartSlotHeight
                 )
             )
 
-            val repairContent = makeRepairInputRow()
-            repairTopSlotView = repairContent
-            // Patch 10: RepairRow and SmartRow must share the exact same TopSlot height.
-            // Do not let the repair row be taller than the slot here; otherwise it looks
-            // like a stacked row above the keyboard instead of replacing the smart row.
             addView(
-                repairContent,
+                stack,
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    Gravity.TOP
+                    FrameLayout.LayoutParams.MATCH_PARENT
                 )
             )
-
-            applyTopSlotState(animated = false)
         }
     }
 
@@ -227,19 +242,19 @@ class KeyboardImeService : InputMethodService() {
         val sendButton = makeRepairSendButton(sendEnabled) { commitFixedRepairText() }
 
         repairEditText = EditText(this).apply {
-            hint = "اكتب النص هنا فقط…\nوضع الإصلاح مفعل…"
+            hint = "اكتب بالعربية هنا… سنصلحها عند الإرسال"
             gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
-            textSize = 18f
+            textSize = 17f
             minLines = 1
-            maxLines = 4
-            setSingleLine(false)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            maxLines = 1
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT
             setTextColor(KeyboardColors.text)
             setHintTextColor(KeyboardColors.textMuted)
             includeFontPadding = false
-            setPadding(dp(12), dp(7), dp(12), dp(7))
+            setPadding(dp(14), dp(6), dp(14), dp(6))
             minHeight = dp(44)
-            background = roundedStrokeBackground(KeyboardColors.panel, KeyboardColors.repairStroke, dp(14), dp(1))
+            background = roundedBackground(KeyboardColors.repairField, dp(14))
             setText(repairBuffer)
             setSelection(text?.length ?: 0)
             addTextChangedListener(object : TextWatcher {
@@ -253,10 +268,6 @@ class KeyboardImeService : InputMethodService() {
                     sendButton.alpha = if (active) 1f else 0.40f
                     sendButton.setColorFilter(if (active) KeyboardColors.onAccent else KeyboardColors.disabledIcon)
                     sendButton.background = ovalBackground(if (active) KeyboardColors.repairButton else KeyboardColors.specialKey)
-                    val nextHeight = repairSlotHeightForText(repairBuffer)
-                    if (repairExpanded && nextHeight != lastRepairSlotHeight) {
-                        resizeRepairSlot(nextHeight)
-                    }
                 }
                 override fun afterTextChanged(text: Editable?) {}
             })
@@ -265,10 +276,8 @@ class KeyboardImeService : InputMethodService() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            // Patch 11: RepairRow is the visual replacement of SmartRow inside the same TopSlot.
-            // Give it an opaque panel background so the SmartRow/icons never show through behind it.
-            setPadding(0, dp(2), 0, dp(3))
-            background = roundedStrokeBackground(KeyboardColors.panel, KeyboardColors.repairStroke, dp(9), dp(1))
+            setPadding(dp(4), dp(3), dp(4), dp(3))
+            background = roundedStrokeBackground(KeyboardColors.panel, KeyboardColors.repairStroke, dp(16), dp(1))
             clipChildren = false
             clipToPadding = false
             addView(
@@ -276,10 +285,6 @@ class KeyboardImeService : InputMethodService() {
                 LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(0, 0, dp(4), 0) }
             )
             addView(repairEditText, LinearLayout.LayoutParams(0, dp(44), 1f))
-            addView(
-                makeIconButton(R.drawable.ic_keyboard_magic_wand, KeyboardColors.repairActive) { toggleRepairExpanded() },
-                LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(dp(4), 0, 0, 0) }
-            )
         }
     }
 
@@ -318,7 +323,7 @@ class KeyboardImeService : InputMethodService() {
             }
 
             addView(
-                makeIconButton(R.drawable.ic_keyboard_magic_wand, if (repairExpanded) KeyboardColors.repairActive else KeyboardColors.textMuted) { toggleRepairExpanded() },
+                makeIconButton(R.drawable.ic_keyboard_magic_wand, if (repairExpanded) KeyboardColors.onAccent else KeyboardColors.repairActive) { toggleRepairExpanded() },
                 LinearLayout.LayoutParams(dp(42), dp(44)).apply { setMargins(dp(2), 0, 0, 0) }
             )
         }
@@ -375,6 +380,8 @@ class KeyboardImeService : InputMethodService() {
 
     private fun smartRowMode(sourceText: String): SmartRowMode {
         return when {
+            repairExpanded && sourceText.isNotBlank() -> SmartRowMode.DICTIONARY
+            repairExpanded -> SmartRowMode.TOOLS
             toolsExpanded -> SmartRowMode.TOOLS
             sourceText.isNotBlank() -> SmartRowMode.DICTIONARY
             else -> SmartRowMode.DICTIONARY
@@ -596,7 +603,7 @@ class KeyboardImeService : InputMethodService() {
             setImageResource(iconRes)
             setColorFilter(iconColor)
             val surfaceColor = when (iconRes) {
-                R.drawable.ic_keyboard_magic_wand -> KeyboardColors.wandSurface
+                R.drawable.ic_keyboard_magic_wand -> if (repairExpanded) KeyboardColors.wandActiveSurface else KeyboardColors.wandSurface
                 R.drawable.ic_keyboard_emoji -> KeyboardColors.iconKey
                 else -> Color.TRANSPARENT
             }
@@ -780,9 +787,9 @@ class KeyboardImeService : InputMethodService() {
             .putBoolean("tools_expanded", toolsExpanded)
             .apply()
 
-        // Patch 08: do not add a separate repair overlay above the smart row.
-        // Refresh only the stable top slot so repair replaces icons/suggestions.
-        refreshStableTopAreaOnly()
+        // Patch 26: opening the wand adds one compact compose line above the toolbar.
+        // The toolbar keeps its place and only its content changes with the text state.
+        setInputView(onCreateInputView())
     }
 
     private fun showRepairOverlay(animated: Boolean) {
@@ -857,34 +864,31 @@ class KeyboardImeService : InputMethodService() {
         }
     }
 
-    private fun refreshStableTopAreaOnly() {
-        val topArea = stableTopArea ?: return
-        val sourceText = currentSuggestionSource()
-        val smartMode = smartRowMode(sourceText)
-        val smartSlotHeight = dp(49)
+    private fun replaceSmartRow(mode: SmartRowMode, sourceText: String) {
+        val stack = topStack ?: return
+        smartTopSlotView?.let(stack::removeView)
 
-        lastDictionaryVisible = sourceText.isNotBlank()
-        lastSmartRowMode = smartMode
-
-        // Patch 09: keep the TopSlot fixed and never add a second vertical row.
-        // Only rebuild the smart child when its content changes; the repair child
-        // stays in the same FrameLayout coordinate space.
-        val oldSmart = smartTopSlotView
-        if (oldSmart != null) topArea.removeView(oldSmart)
-        val smartContent = makeSmartRow(smartMode, dictionarySuggestions(sourceText))
+        val smartContent = makeSmartRow(mode, dictionarySuggestions(sourceText))
         smartTopSlotView = smartContent
-        topArea.addView(
+        val index = if (repairExpanded && repairTopSlotView != null) 1 else 0
+        stack.addView(
             smartContent,
-            0,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                smartSlotHeight,
-                Gravity.TOP
+            index,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(49)
             )
         )
+        smartContent.alpha = 0f
+        smartContent.animate().alpha(1f).setDuration(90).start()
+        lastSmartRowMode = mode
+    }
 
-        repairTopSlotView?.bringToFront()
-        applyTopSlotState(animated = true)
+    private fun refreshStableTopAreaOnly() {
+        val sourceText = currentSuggestionSource()
+        val mode = smartRowMode(sourceText)
+        lastDictionaryVisible = sourceText.isNotBlank()
+        replaceSmartRow(mode, sourceText)
     }
 
     private fun applyTopSlotState(animated: Boolean) {
@@ -1114,21 +1118,12 @@ class KeyboardImeService : InputMethodService() {
         val smartMode = smartRowMode(source)
         val shouldShowDictionary = source.isNotBlank()
 
-        // While the user is typing inside the repair box, do not rebuild the full keyboard
-        // for every character. This keeps writing stable and removes the visible lag.
-        if (repairExpanded && repairEditText != null) {
-            if (smartMode == SmartRowMode.DICTIONARY) {
-                rebuildDictionaryContent(dictionarySuggestions(source))
-            }
+        if (smartMode != lastSmartRowMode) {
+            replaceSmartRow(smartMode, source)
             lastDictionaryVisible = shouldShowDictionary
-            lastSmartRowMode = smartMode
             return
         }
 
-        if (smartMode != lastSmartRowMode) {
-            setInputView(onCreateInputView())
-            return
-        }
         lastDictionaryVisible = shouldShowDictionary
         if (smartMode == SmartRowMode.DICTIONARY) {
             rebuildDictionaryContent(dictionarySuggestions(source))
@@ -1318,7 +1313,9 @@ class KeyboardImeService : InputMethodService() {
         val enterKey: Int = Color.rgb(111, 88, 164)
         val repairActive: Int = Color.rgb(102, 78, 157)
         val repairButton: Int = Color.rgb(111, 88, 164)
+        val repairField: Int = Color.rgb(249, 245, 252)
         val wandSurface: Int = Color.rgb(232, 218, 252)
+        val wandActiveSurface: Int = Color.rgb(111, 88, 164)
         val keyStroke: Int = Color.rgb(215, 206, 222)
         val specialStroke: Int = Color.rgb(210, 199, 220)
         val enterStroke: Int = Color.rgb(88, 65, 139)
