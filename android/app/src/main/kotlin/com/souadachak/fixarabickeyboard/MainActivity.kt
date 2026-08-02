@@ -31,8 +31,12 @@ class MainActivity : FlutterActivity() {
                 }
                 "setNumberRowMode" -> {
                     val mode = call.argument<String>("mode")
-                    if (mode !in NUMBER_ROW_MODES) {
-                        result.error("invalid_number_row_mode", "Unsupported number-row mode", null)
+                    if (mode == null || mode !in NUMBER_ROW_MODES) {
+                        result.error(
+                            "invalid_number_row_mode",
+                            "Unsupported number-row mode",
+                            null
+                        )
                     } else {
                         getSharedPreferences(KEYBOARD_UI_PREFS, Context.MODE_PRIVATE)
                             .edit()
