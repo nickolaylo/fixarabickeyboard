@@ -23,6 +23,19 @@ jobs:
           ref: agent/patch-26-magic-compose-layer-smart-toolbar
           fetch-depth: 0
 
+      - name: Normalize escaped Kotlin newline in transformation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/apply_patch26.py')
+          source = path.read_text(encoding='utf-8')
+          needle = 'hint = "اكتب النص هنا فقط…\\nوضع الإصلاح مفعل…"'
+          replacement = 'hint = "اكتب النص هنا فقط…\\\\nوضع الإصلاح مفعل…"'
+          if needle not in source:
+              raise SystemExit('Expected Kotlin hint pattern was not found')
+          path.write_text(source.replace(needle, replacement, 1), encoding='utf-8')
+          PY
+
       - name: Apply source transformation
         run: python3 tools/apply_patch26.py
 
