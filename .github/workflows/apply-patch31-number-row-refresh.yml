@@ -1,0 +1,33 @@
+name: Apply Patch 31 Number Row Refresh
+
+on:
+  push:
+    branches:
+      - agent/patch-31-performance-emoji-panel-manual-lines
+    paths:
+      - tools/apply_patch31_number_row_refresh.py
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/patch-31-performance-emoji-panel-manual-lines
+          fetch-depth: 0
+
+      - run: python tools/apply_patch31_number_row_refresh.py
+
+      - run: |
+          rm tools/apply_patch31_number_row_refresh.py
+          rm .github/workflows/apply-patch31-number-row-refresh.yml
+
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Patch 31: refresh adaptive number row on input start"
+          git push origin HEAD:agent/patch-31-performance-emoji-panel-manual-lines
