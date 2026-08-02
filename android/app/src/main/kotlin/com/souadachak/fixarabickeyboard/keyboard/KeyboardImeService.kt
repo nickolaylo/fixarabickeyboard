@@ -53,6 +53,7 @@ class KeyboardImeService : InputMethodService() {
     private var repairRowContainer: FrameLayout? = null
     private var keyboardRoot: FrameLayout? = null
     private var repairOverlayView: View? = null
+    private var keyAreaContainer: FrameLayout? = null
     private val deleteRepeatHandler = Handler(Looper.getMainLooper())
     private var deleteRepeatRunnable: Runnable? = null
     private var deleteRepeatCount: Int = 0
@@ -61,6 +62,7 @@ class KeyboardImeService : InputMethodService() {
 
     private companion object {
         const val SUGGESTION_CONTEXT_LIMIT = 160
+        const val KEY_AREA_HEIGHT_DP = 264
     }
 
     private val prefs by lazy { getSharedPreferences("keyboard_ui_state", Context.MODE_PRIVATE) }
@@ -94,15 +96,24 @@ class KeyboardImeService : InputMethodService() {
         }
 
         keyboardStack.addView(makeStableTopArea())
-        if (morePanelExpanded) {
-            keyboardStack.addView(makeMoreToolsPanel())
-        } else {
-            keyboardStack.addView(makeNumberRow())
-            activeRows().forEachIndexed { index, row ->
-                keyboardStack.addView(makeLetterRow(row, showBackspace = index == 2))
-            }
-            keyboardStack.addView(makeBottomRow())
+        val keyArea = FrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = false
+            clipToPadding = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(KEY_AREA_HEIGHT_DP)
+            )
         }
+        keyAreaContainer = keyArea
+        keyArea.addView(
+            if (morePanelExpanded) makeMoreToolsPanel() else makeKeyboardKeyArea(),
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        keyboardStack.addView(keyArea)
 
         root.addView(
             keyboardStack,
@@ -237,13 +248,8 @@ class KeyboardImeService : InputMethodService() {
         val lines = text
             .lineSequence()
             .sumOf { line -> ((line.length / 34) + 1).coerceAtLeast(1) }
-            .coerceIn(1, 4)
-        return when (lines) {
-            1 -> dp(45)
-            2 -> dp(69)
-            3 -> dp(93)
-            else -> dp(117)
-        }
+            .coerceIn(1, 2)
+        return if (lines == 1) dp(45) else dp(69)
     }
 
     private fun makeRepairInputRow(): FrameLayout {
@@ -252,7 +258,7 @@ class KeyboardImeService : InputMethodService() {
             gravity = Gravity.RIGHT or Gravity.TOP
             textSize = 16f
             minLines = 1
-            maxLines = 4
+            maxLines = 2
             setSingleLine(false)
             setHorizontallyScrolling(false)
             isVerticalScrollBarEnabled = true
@@ -321,8 +327,8 @@ class KeyboardImeService : InputMethodService() {
             addView(
                 closeButton,
                 FrameLayout.LayoutParams(dp(26), dp(26), Gravity.TOP or Gravity.RIGHT).apply {
-                    topMargin = -dp(2)
-                    rightMargin = dp(5)
+                    topMargin = -dp(3)
+                    rightMargin = -dp(4)
                 }
             )
         }
@@ -450,7 +456,20 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun smartRowMode(sourceText: String): SmartRowMode {
+        if (morePanelExpanded) return SmartRowMode.TOOLS
         return if (sourceText.isNotBlank()) SmartRowMode.DICTIONARY else SmartRowMode.TOOLS
+    }
+
+    private fun makeKeyboardKeyArea(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.TRANSPARENT)
+            addView(makeNumberRow())
+            activeRows().forEachIndexed { index, row ->
+                addView(makeLetterRow(row, showBackspace = index == 2))
+            }
+            addView(makeBottomRow())
+        }
     }
 
     private fun makeMoreToolsPanel(): LinearLayout {
@@ -480,12 +499,27 @@ class KeyboardImeService : InputMethodService() {
             )
         }
 
+        val title = TextView(this).apply {
+            text = moreToolLabel("المزيد", "More", "Plus")
+            gravity = Gravity.CENTER_VERTICAL
+            textSize = 16f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setTextColor(KeyboardColors.text)
+            includeFontPadding = false
+            setPadding(dp(10), 0, dp(10), 0)
+        }
+
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(4), 0, dp(4))
+            background = roundedBackground(KeyboardColors.panel, dp(14))
+            addView(title, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34)))
             addView(firstRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
             addView(secondRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(247))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
         }
     }
 
@@ -923,7 +957,23 @@ class KeyboardImeService : InputMethodService() {
             repairBuffer = repairEditText?.text?.toString() ?: repairBuffer
         }
         morePanelExpanded = !morePanelExpanded
-        setInputView(onCreateInputView())
+        refreshKeyAreaContent()
+    }
+
+    private fun refreshKeyAreaContent() {
+        val container = keyAreaContainer ?: return
+        container.removeAllViews()
+        container.addView(
+            if (morePanelExpanded) makeMoreToolsPanel() else makeKeyboardKeyArea(),
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+
+        val sourceText = currentSuggestionSource()
+        val mode = if (morePanelExpanded) SmartRowMode.TOOLS else smartRowMode(sourceText)
+        replaceSmartRow(mode, if (morePanelExpanded) "" else sourceText)
     }
 
     private fun toggleToolsExpanded() {
