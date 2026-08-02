@@ -27,6 +27,23 @@ jobs:
             exit 0
           fi
 
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("tools/apply_patch31.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''    if count != 1:
+              raise RuntimeError(f"{label}: expected exactly one match, found {count}")
+          return text.replace(old, new, 1)'''
+          new = '''    if label == "initial key-area content" and count == 2:
+              return text.replace(old, new, 1)
+          if count != 1:
+              raise RuntimeError(f"{label}: expected exactly one match, found {count}")
+          return text.replace(old, new, 1)'''
+          if old not in text:
+              raise RuntimeError("Could not patch Patch 31 replacement helper")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
           python tools/apply_patch31.py
 
           python - <<'PY'
@@ -43,6 +60,7 @@ jobs:
           rm -f tools/apply_patch31.py
           rm -f tools/patch31-trigger.txt
           rm -f tools/patch31-trigger-2.txt
+          rm -f tools/patch31-trigger-3.txt
           rm -f .github/workflows/apply-patch31.yml
 
           git config user.name "github-actions[bot]"
