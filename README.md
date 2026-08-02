@@ -1,17 +1,34 @@
-# fixarabickeyboard
+# Fix Arabic Keyboard
 
-A new Flutter project.
+لوحة مفاتيح Android تساعد المستخدم على كتابة العربية بصورة صحيحة داخل الألعاب والتطبيقات التي تعرض الحروف العربية مقطعة أو معكوسة.
 
-## Getting Started
+## الحالة الحالية
 
-This project is a starting point for a Flutter application.
+- Final Base: `Patch 24 — Companion App Visual Foundation`
+- التطبيق المرافق: واجهة Material 3 بثلاثة أقسام: لوحة المفاتيح، المكافآت، الإعدادات.
+- لوحة Android الأصلية: تعمل بالعربية والإنجليزية والفرنسية مع اقتراحات وقواميس محلية.
+- المعالجة: محلية على الجهاز، ولا تسجل نصوص المستخدم في Analytics أو Crashlytics.
+- المرحلة التالية: `Patch 25 — Native Keyboard Visual Foundation` لتوحيد شكل لوحة Android الفعلية مع هوية التطبيق.
 
-A few resources to get you started if this is your first Flutter project:
+## اتجاه المنتج
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+الميزة الأساسية هي وضع العصا السحرية: يكتب المستخدم العربية الطبيعية داخل مساحة مدمجة في لوحة المفاتيح، ثم تعالج اللوحة النص محليًا عند الإرسال لتوافق التطبيقات التي لا تدعم العربية جيدًا.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+نظام المكافآت سيبقى داخل التطبيق المرافق، وليس داخل مساحة الكتابة. الاتجاه التجاري الحالي هو إعلانات المكافأة الاختيارية بعد اعتماد القيم وربط AdMob في مرحلة مستقلة.
+
+## مراجع المشروع
+
+- حالة المشروع والقرارات: [`PROJECT_JOURNAL.md`](PROJECT_JOURNAL.md)
+- خدمة لوحة المفاتيح الأصلية: `android/app/src/main/kotlin/com/souadachak/fixarabickeyboard/keyboard/KeyboardImeService.kt`
+- التطبيق المرافق: `lib/`
+
+## الفحص المحلي
+
+```bash
+flutter pub get
+flutter analyze
+flutter test
+flutter run
+```
+
+يجب اختبار لوحة المفاتيح الفعلية على Android، لأن جزء `InputMethodService` أصلي ولا يغطيه اختبار Flutter وحده.
