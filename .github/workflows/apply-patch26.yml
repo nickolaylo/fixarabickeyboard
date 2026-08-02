@@ -1,0 +1,35 @@
+name: Apply Patch 26
+
+on:
+  push:
+    branches:
+      - agent/patch-26-magic-compose-layer-smart-toolbar
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply source transformation
+        run: python3 tools/apply_patch26.py
+
+      - name: Remove temporary automation files
+        run: |
+          rm tools/apply_patch26.py
+          rm .github/workflows/apply-patch26.yml
+
+      - name: Commit Patch 26 source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Implement magic compose layer and smart toolbar states"
+          git push
