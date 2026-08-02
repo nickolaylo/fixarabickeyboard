@@ -1,33 +1,38 @@
-name: Apply Patch 31
+name: Apply Patch 31 Performance Emoji Panel
 
 on:
   push:
     branches:
       - agent/patch-31-performance-emoji-panel-manual-lines
+    paths:
+      - tools/apply_patch31.py
+      - .github/workflows/apply-patch31.yml
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout patch branch
+        uses: actions/checkout@v4
         with:
           ref: agent/patch-31-performance-emoji-panel-manual-lines
-      - name: Apply transformation
-        run: python3 tools/apply_patch31.py
+          fetch-depth: 0
+
+      - name: Apply Patch 31
+        run: python tools/apply_patch31.py
+
       - name: Remove temporary transformer
         run: |
           rm tools/apply_patch31.py
           rm .github/workflows/apply-patch31.yml
+
       - name: Commit Patch 31
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add PROJECT_JOURNAL.md android/app/src/main/kotlin/com/souadachak/fixarabickeyboard/keyboard/KeyboardImeService.kt tools/apply_patch31.py .github/workflows/apply-patch31.yml
           git commit -m "Patch 31: improve typing and add emoji panel"
-          git push
-
-# Retry trigger after workflow creation
+          git push origin HEAD:agent/patch-31-performance-emoji-panel-manual-lines
