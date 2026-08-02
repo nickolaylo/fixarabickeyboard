@@ -64,6 +64,8 @@ class KeyboardImeService : InputMethodService() {
     private val suggestionRefreshHandler = Handler(Looper.getMainLooper())
     private var suggestionRefreshRunnable: Runnable? = null
     private var emojiRecentRow: LinearLayout? = null
+    private var appliedNumberRowMode: String? = null
+    private var appliedOrientation: Int = Configuration.ORIENTATION_UNDEFINED
 
     private companion object {
         const val SUGGESTION_CONTEXT_LIMIT = 160
@@ -115,6 +117,9 @@ class KeyboardImeService : InputMethodService() {
     }
 
     override fun onCreateInputView(): View {
+        appliedNumberRowMode = currentNumberRowMode()
+        appliedOrientation = resources.configuration.orientation
+
         // Patch 04: build the keyboard from the bottom upward.
         // The key area stays anchored to the bottom while optional rows above it change.
         val root = FrameLayout(this).apply {
@@ -191,6 +196,18 @@ class KeyboardImeService : InputMethodService() {
         }
 
         updateSuggestions()
+    }
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        val currentMode = currentNumberRowMode()
+        val currentOrientation = resources.configuration.orientation
+        if (
+            currentMode != appliedNumberRowMode ||
+            currentOrientation != appliedOrientation
+        ) {
+            setInputView(onCreateInputView())
+        }
     }
 
     private fun makeStableTopArea(): FrameLayout {
@@ -509,11 +526,13 @@ class KeyboardImeService : InputMethodService() {
         return resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     }
 
+    private fun currentNumberRowMode(): String {
+        return prefs.getString(NUMBER_ROW_MODE_KEY, NUMBER_ROW_PORTRAIT_ONLY)
+            ?: NUMBER_ROW_PORTRAIT_ONLY
+    }
+
     private fun shouldShowNumberRow(): Boolean {
-        return when (
-            prefs.getString(NUMBER_ROW_MODE_KEY, NUMBER_ROW_PORTRAIT_ONLY)
-                ?: NUMBER_ROW_PORTRAIT_ONLY
-        ) {
+        return when (currentNumberRowMode()) {
             NUMBER_ROW_ALWAYS -> true
             NUMBER_ROW_HIDDEN -> false
             else -> !isLandscapeKeyboard()
