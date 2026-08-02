@@ -1,0 +1,38 @@
+name: Apply Patch 30 Compose Editor Polish
+
+on:
+  push:
+    branches:
+      - agent/patch-30-compose-editor-polish
+    paths:
+      - tools/apply_patch30_compose_editor_polish.py
+      - .github/workflows/apply-patch30-compose-editor-polish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/patch-30-compose-editor-polish
+          fetch-depth: 0
+
+      - name: Apply Patch 30
+        run: python tools/apply_patch30_compose_editor_polish.py
+
+      - name: Remove temporary transformer
+        run: |
+          rm tools/apply_patch30_compose_editor_polish.py
+          rm .github/workflows/apply-patch30-compose-editor-polish.yml
+
+      - name: Commit Patch 30
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PROJECT_JOURNAL.md android/app/src/main/kotlin/com/souadachak/fixarabickeyboard/keyboard/KeyboardImeService.kt tools/apply_patch30_compose_editor_polish.py .github/workflows/apply-patch30-compose-editor-polish.yml
+          git commit -m "Patch 30: polish compose editor interactions"
+          git push origin HEAD:agent/patch-30-compose-editor-polish
