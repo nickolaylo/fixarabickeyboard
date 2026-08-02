@@ -95,7 +95,10 @@ class _KeyboardSettingsPageState extends State<KeyboardSettingsPage> {
             children: [
               SwitchListTile.adaptive(
                 value: store.correctionEnabled,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 5,
+                ),
                 secondary: const Icon(Icons.auto_fix_high_outlined),
                 title: Text(strings.correctionSetting),
                 subtitle: Text(strings.correctionSettingBody),
@@ -112,8 +115,8 @@ class _KeyboardSettingsPageState extends State<KeyboardSettingsPage> {
                 leading: const Icon(Icons.format_list_numbered_rounded),
                 title: Text(strings.numberRowSetting),
                 subtitle: Text(
-                  '${strings.numberRowSettingBody}
-${_numberRowModeLabel(strings, store.numberRowMode)}',
+                  '${strings.numberRowSettingBody}\n'
+                  '${_numberRowModeLabel(strings, store.numberRowMode)}',
                 ),
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => _chooseNumberRowMode(strings),
@@ -121,7 +124,10 @@ ${_numberRowModeLabel(strings, store.numberRowMode)}',
               const Divider(),
               SwitchListTile.adaptive(
                 value: store.hapticEnabled,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 5,
+                ),
                 secondary: const Icon(Icons.vibration_rounded),
                 title: Text(strings.hapticSetting),
                 subtitle: Text(strings.hapticSettingBody),
@@ -138,7 +144,10 @@ ${_numberRowModeLabel(strings, store.numberRowMode)}',
         Card(
           clipBehavior: Clip.antiAlias,
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 8,
+            ),
             leading: const Icon(Icons.palette_outlined),
             title: Text(strings.appearanceRoadmapTitle),
             subtitle: Text(strings.appearanceRoadmapBody),
@@ -151,7 +160,10 @@ ${_numberRowModeLabel(strings, store.numberRowMode)}',
         Card(
           clipBehavior: Clip.antiAlias,
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 8,
+            ),
             leading: const Icon(Icons.swipe_outlined),
             title: Text(strings.gestureRoadmapTitle),
             subtitle: Text(strings.gestureRoadmapBody),
