@@ -1,4 +1,5 @@
 import 'package:fixarabickeyboard/app/fix_arabic_keyboard_app.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -18,6 +19,14 @@ void main() {
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
     expect(find.text('Typing'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('Keyboard appearance'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+
     expect(find.text('Keyboard appearance'), findsOneWidget);
   });
 }
