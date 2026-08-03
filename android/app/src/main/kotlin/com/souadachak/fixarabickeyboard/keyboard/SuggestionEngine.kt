@@ -70,11 +70,17 @@ class SuggestionEngine(context: Context) {
             }
 
         if (currentToken.isEmpty()) {
+            if (completedWords.isEmpty()) return emptyList()
+            val coldStartWords = dictionaries.coldStartWords(
+                language = language,
+                contextWords = completedWords,
+                limit = 8
+            )
             return arrangeSuggestions(
                 learned = learned,
-                dictionaryWords = language.defaultWords,
+                dictionaryWords = coldStartWords,
                 language = language,
-                allowDefaultFallbacks = true
+                allowDefaultFallbacks = false
             )
         }
 

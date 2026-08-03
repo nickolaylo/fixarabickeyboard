@@ -213,8 +213,9 @@ class KeyboardImeService : InputMethodService() {
 
     private fun makeStableTopArea(): FrameLayout {
         val sourceText = currentSuggestionSource()
-        val smartMode = smartRowMode(sourceText)
-        lastDictionaryVisible = sourceText.isNotBlank()
+        val suggestions = dictionarySuggestions(sourceText)
+        val smartMode = smartRowMode(suggestions)
+        lastDictionaryVisible = suggestions.isNotEmpty()
         lastSmartRowMode = smartMode
 
         val smartSlotHeight = dp(43)
@@ -255,7 +256,7 @@ class KeyboardImeService : InputMethodService() {
                 repairEditText = null
             }
 
-            val smartContent = makeSmartRow(smartMode, dictionarySuggestions(sourceText))
+            val smartContent = makeSmartRow(smartMode, suggestions)
             smartTopSlotView = smartContent
             stack.addView(
                 smartContent,
@@ -481,6 +482,21 @@ class KeyboardImeService : InputMethodService() {
 
     private fun LinearLayout.addDictionaryContentToSmartRow(suggestions: List<SuggestionItem>) {
         val visibleSuggestions = suggestions.take(3)
+        val missingSlots = (3 - visibleSuggestions.size).coerceAtLeast(0)
+
+        fun addEmptySlot() {
+            addView(
+                View(this@KeyboardImeService),
+                LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                    setMargins(dp(2), dp(1), dp(2), dp(1))
+                }
+            )
+        }
+
+        if (activeDictionaryLanguage() == DictionaryLanguage.ARABIC) {
+            repeat(missingSlots) { addEmptySlot() }
+        }
+
         visibleSuggestions.forEach { suggestion ->
             val onLongClick = suggestion.learnedContextWords?.let {
                 { forgetLearnedSuggestion(suggestion) }
@@ -491,11 +507,14 @@ class KeyboardImeService : InputMethodService() {
                     onClick = { commitSuggestion(suggestion.commitText) },
                     onLongClick = onLongClick
                 ),
-                LinearLayout.LayoutParams(0, dp(38), 1f).apply { setMargins(dp(2), dp(1), dp(2), dp(1)) }
+                LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                    setMargins(dp(2), dp(1), dp(2), dp(1))
+                }
             )
         }
-        repeat((3 - visibleSuggestions.size).coerceAtLeast(0)) {
-            addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(38), 1f).apply { setMargins(dp(2), dp(1), dp(2), dp(1)) })
+
+        if (activeDictionaryLanguage() != DictionaryLanguage.ARABIC) {
+            repeat(missingSlots) { addEmptySlot() }
         }
     }
 
@@ -518,9 +537,9 @@ class KeyboardImeService : InputMethodService() {
         }
     }
 
-    private fun smartRowMode(sourceText: String): SmartRowMode {
+    private fun smartRowMode(suggestions: List<SuggestionItem>): SmartRowMode {
         if (morePanelExpanded || emojiPanelExpanded) return SmartRowMode.TOOLS
-        return if (sourceText.isNotBlank()) SmartRowMode.DICTIONARY else SmartRowMode.TOOLS
+        return if (suggestions.isNotEmpty()) SmartRowMode.DICTIONARY else SmartRowMode.TOOLS
     }
 
     private fun isLandscapeKeyboard(): Boolean {
@@ -1330,9 +1349,13 @@ class KeyboardImeService : InputMethodService() {
         )
 
         val auxiliaryPanelOpen = morePanelExpanded || emojiPanelExpanded
-        val sourceText = currentSuggestionSource()
-        val mode = if (auxiliaryPanelOpen) SmartRowMode.TOOLS else smartRowMode(sourceText)
-        replaceSmartRow(mode, if (auxiliaryPanelOpen) "" else sourceText)
+        val suggestions = if (auxiliaryPanelOpen) {
+            emptyList()
+        } else {
+            dictionarySuggestions(currentSuggestionSource())
+        }
+        val mode = if (auxiliaryPanelOpen) SmartRowMode.TOOLS else smartRowMode(suggestions)
+        replaceSmartRow(mode, suggestions)
     }
 
     private fun toggleToolsExpanded() {
@@ -1436,11 +1459,11 @@ class KeyboardImeService : InputMethodService() {
         }
     }
 
-    private fun replaceSmartRow(mode: SmartRowMode, sourceText: String) {
+    private fun replaceSmartRow(mode: SmartRowMode, suggestions: List<SuggestionItem>) {
         val stack = topStack ?: return
         smartTopSlotView?.let(stack::removeView)
 
-        val smartContent = makeSmartRow(mode, dictionarySuggestions(sourceText))
+        val smartContent = makeSmartRow(mode, suggestions)
         smartTopSlotView = smartContent
         val index = if (repairExpanded && repairTopSlotView != null) 1 else 0
         stack.addView(
@@ -1457,10 +1480,10 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun refreshStableTopAreaOnly() {
-        val sourceText = currentSuggestionSource()
-        val mode = smartRowMode(sourceText)
-        lastDictionaryVisible = sourceText.isNotBlank()
-        replaceSmartRow(mode, sourceText)
+        val suggestions = dictionarySuggestions(currentSuggestionSource())
+        val mode = smartRowMode(suggestions)
+        lastDictionaryVisible = suggestions.isNotEmpty()
+        replaceSmartRow(mode, suggestions)
     }
 
     private fun applyTopSlotState(animated: Boolean) {
@@ -1750,18 +1773,19 @@ class KeyboardImeService : InputMethodService() {
     }
 
     private fun updateSuggestions(source: String = currentSuggestionSource()) {
-        val smartMode = smartRowMode(source)
-        val shouldShowDictionary = source.isNotBlank()
+        val suggestions = dictionarySuggestions(source)
+        val smartMode = smartRowMode(suggestions)
+        val shouldShowDictionary = suggestions.isNotEmpty()
 
         if (smartMode != lastSmartRowMode) {
-            replaceSmartRow(smartMode, source)
+            replaceSmartRow(smartMode, suggestions)
             lastDictionaryVisible = shouldShowDictionary
             return
         }
 
         lastDictionaryVisible = shouldShowDictionary
         if (smartMode == SmartRowMode.DICTIONARY) {
-            rebuildDictionaryContent(dictionarySuggestions(source))
+            rebuildDictionaryContent(suggestions)
         }
     }
 
