@@ -1,0 +1,34 @@
+name: Temporary Apply Patch 32
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/patch-32-emoji-delete-and-compact-rows'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Patch 32 branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/patch-32-emoji-delete-and-compact-rows
+          fetch-depth: 0
+
+      - name: Apply Patch 32
+        run: python tools/apply_patch32_emoji_delete_compact_rows.py
+
+      - name: Remove temporary transformer
+        run: rm tools/apply_patch32_emoji_delete_compact_rows.py
+
+      - name: Commit Patch 32
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Patch 32: add emoji delete and compact key rows"
+          git push origin HEAD:agent/patch-32-emoji-delete-and-compact-rows
