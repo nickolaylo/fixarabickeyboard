@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import java.text.BreakIterator
+import kotlin.math.roundToInt
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -65,6 +66,10 @@ class KeyboardImeService : InputMethodService() {
     private var suggestionRefreshRunnable: Runnable? = null
     private var emojiRecentRow: LinearLayout? = null
     private var appliedNumberRowMode: String? = null
+    private var appliedKeyboardHeightPercent: Int? = null
+    private var appliedLetterSizePercent: Int? = null
+    private var appliedBottomSpacingDp: Int? = null
+    private var appliedKeyBordersEnabled: Boolean? = null
     private var appliedOrientation: Int = Configuration.ORIENTATION_UNDEFINED
 
     private companion object {
@@ -73,6 +78,19 @@ class KeyboardImeService : InputMethodService() {
         const val NUMBER_ROW_ALWAYS = "always"
         const val NUMBER_ROW_PORTRAIT_ONLY = "portrait_only"
         const val NUMBER_ROW_HIDDEN = "hidden"
+        const val KEYBOARD_HEIGHT_PERCENT_KEY = "keyboard_height_percent"
+        const val LETTER_SIZE_PERCENT_KEY = "letter_size_percent"
+        const val BOTTOM_SPACING_DP_KEY = "bottom_spacing_dp"
+        const val KEY_BORDERS_ENABLED_KEY = "key_borders_enabled"
+        const val DEFAULT_KEYBOARD_HEIGHT_PERCENT = 100
+        const val DEFAULT_LETTER_SIZE_PERCENT = 100
+        const val DEFAULT_BOTTOM_SPACING_DP = 0
+        const val MIN_KEYBOARD_HEIGHT_PERCENT = 85
+        const val MAX_KEYBOARD_HEIGHT_PERCENT = 115
+        const val MIN_LETTER_SIZE_PERCENT = 85
+        const val MAX_LETTER_SIZE_PERCENT = 120
+        const val MIN_BOTTOM_SPACING_DP = 0
+        const val MAX_BOTTOM_SPACING_DP = 24
         const val RECENT_EMOJIS_KEY = "recent_emojis"
         const val EMOJI_SEPARATOR = "\u001F"
 
@@ -118,6 +136,10 @@ class KeyboardImeService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         appliedNumberRowMode = currentNumberRowMode()
+        appliedKeyboardHeightPercent = currentKeyboardHeightPercent()
+        appliedLetterSizePercent = currentLetterSizePercent()
+        appliedBottomSpacingDp = currentBottomSpacingDp()
+        appliedKeyBordersEnabled = currentKeyBordersEnabled()
         appliedOrientation = resources.configuration.orientation
 
         // Patch 04: build the keyboard from the bottom upward.
@@ -133,7 +155,8 @@ class KeyboardImeService : InputMethodService() {
         val keyboardStack = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val verticalPadding = dp(if (isLandscapeKeyboard()) 3 else 4)
-            setPadding(dp(8), verticalPadding, dp(8), verticalPadding)
+            val bottomPadding = verticalPadding + dp(currentBottomSpacingDp())
+            setPadding(dp(8), verticalPadding, dp(8), bottomPadding)
             setBackgroundColor(KeyboardColors.background)
             clipChildren = false
             clipToPadding = false
@@ -202,9 +225,17 @@ class KeyboardImeService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         val currentMode = currentNumberRowMode()
+        val currentHeightPercent = currentKeyboardHeightPercent()
+        val currentLetterPercent = currentLetterSizePercent()
+        val currentBottomSpacing = currentBottomSpacingDp()
+        val currentBordersEnabled = currentKeyBordersEnabled()
         val currentOrientation = resources.configuration.orientation
         if (
             currentMode != appliedNumberRowMode ||
+            currentHeightPercent != appliedKeyboardHeightPercent ||
+            currentLetterPercent != appliedLetterSizePercent ||
+            currentBottomSpacing != appliedBottomSpacingDp ||
+            currentBordersEnabled != appliedKeyBordersEnabled ||
             currentOrientation != appliedOrientation
         ) {
             setInputView(onCreateInputView())
@@ -341,6 +372,7 @@ class KeyboardImeService : InputMethodService() {
                 requestFocus()
                 setSelection(text?.length ?: 0)
                 isCursorVisible = true
+                scrollRepairCursorIntoView(this)
             }
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(text: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -348,7 +380,10 @@ class KeyboardImeService : InputMethodService() {
                     repairBuffer = text?.toString().orEmpty()
                 }
                 override fun afterTextChanged(text: Editable?) {
-                    post { updateRepairAreaHeight(text?.toString().orEmpty()) }
+                    post {
+                        updateRepairAreaHeight(text?.toString().orEmpty())
+                        repairEditText?.let(::scrollRepairCursorIntoView)
+                    }
                 }
             })
         }
@@ -551,6 +586,33 @@ class KeyboardImeService : InputMethodService() {
             ?: NUMBER_ROW_PORTRAIT_ONLY
     }
 
+    private fun currentKeyboardHeightPercent(): Int {
+        return prefs.getInt(KEYBOARD_HEIGHT_PERCENT_KEY, DEFAULT_KEYBOARD_HEIGHT_PERCENT)
+            .coerceIn(MIN_KEYBOARD_HEIGHT_PERCENT, MAX_KEYBOARD_HEIGHT_PERCENT)
+    }
+
+    private fun currentLetterSizePercent(): Int {
+        return prefs.getInt(LETTER_SIZE_PERCENT_KEY, DEFAULT_LETTER_SIZE_PERCENT)
+            .coerceIn(MIN_LETTER_SIZE_PERCENT, MAX_LETTER_SIZE_PERCENT)
+    }
+
+    private fun currentBottomSpacingDp(): Int {
+        return prefs.getInt(BOTTOM_SPACING_DP_KEY, DEFAULT_BOTTOM_SPACING_DP)
+            .coerceIn(MIN_BOTTOM_SPACING_DP, MAX_BOTTOM_SPACING_DP)
+    }
+
+    private fun currentKeyBordersEnabled(): Boolean {
+        return prefs.getBoolean(KEY_BORDERS_ENABLED_KEY, true)
+    }
+
+    private fun scaledKeyboardDp(baseDp: Int): Int {
+        return (baseDp * currentKeyboardHeightPercent() / 100f).roundToInt()
+    }
+
+    private fun scaledKeyTextSize(baseSp: Float): Float {
+        return baseSp * currentLetterSizePercent() / 100f
+    }
+
     private fun shouldShowNumberRow(): Boolean {
         return when (currentNumberRowMode()) {
             NUMBER_ROW_ALWAYS -> true
@@ -561,18 +623,19 @@ class KeyboardImeService : InputMethodService() {
 
     private fun currentKeyAreaHeightDp(): Int {
         val showNumberRow = shouldShowNumberRow()
-        return when {
+        val baseHeight = when {
             isLandscapeKeyboard() && showNumberRow -> 196
             isLandscapeKeyboard() -> 160
             showNumberRow -> 218
             else -> 178
         }
+        return scaledKeyboardDp(baseHeight)
     }
 
-    private fun numberKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 34 else 38)
-    private fun letterKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 36 else 40)
-    private fun functionKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 38 else 42)
-    private fun bottomKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 42 else 44)
+    private fun numberKeyHeight(): Int = dp(scaledKeyboardDp(if (isLandscapeKeyboard()) 34 else 38))
+    private fun letterKeyHeight(): Int = dp(scaledKeyboardDp(if (isLandscapeKeyboard()) 36 else 40))
+    private fun functionKeyHeight(): Int = dp(scaledKeyboardDp(if (isLandscapeKeyboard()) 38 else 42))
+    private fun bottomKeyHeight(): Int = dp(scaledKeyboardDp(if (isLandscapeKeyboard()) 42 else 44))
     private fun rowTopPadding(): Int = dp(if (isLandscapeKeyboard()) 0 else 1)
     private fun rowBottomPadding(): Int = dp(1)
     private fun bottomRowTopPadding(): Int = dp(1)
@@ -762,6 +825,7 @@ class KeyboardImeService : InputMethodService() {
             editable.replace(start, end, emoji)
             edit.setSelection((start + emoji.length).coerceAtMost(editable.length))
             repairBuffer = editable.toString()
+            scrollRepairCursorIntoView(edit)
         } else {
             currentInputConnection?.commitText(emoji, 1)
             typedText.append(emoji)
@@ -877,7 +941,7 @@ class KeyboardImeService : InputMethodService() {
             gravity = Gravity.CENTER
             setPadding(0, rowTopPadding(), 0, rowBottomPadding())
             listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").forEach { key ->
-                addView(makeActionKey(key, KeyboardColors.key, 19f) { handleKey(key) }, LinearLayout.LayoutParams(0, numberKeyHeight(), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
+                addView(makeActionKey(key, KeyboardColors.key, scaledKeyTextSize(19f)) { handleKey(key) }, LinearLayout.LayoutParams(0, numberKeyHeight(), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
             }
         }
     }
@@ -1013,7 +1077,7 @@ class KeyboardImeService : InputMethodService() {
 
     private fun bottomParams(width: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(width, bottomKeyHeight()).apply { setMargins(dp(2), 0, dp(2), 0) }
 
-    private fun makeLetterKey(label: String, onClick: () -> Unit): TextView = makeBaseKey(label, KeyboardColors.key, KeyboardColors.text, 20f, Typeface.NORMAL, true, onClick)
+    private fun makeLetterKey(label: String, onClick: () -> Unit): TextView = makeBaseKey(label, KeyboardColors.key, KeyboardColors.text, scaledKeyTextSize(20f), Typeface.NORMAL, true, onClick)
 
     private fun makeActionKey(label: String, color: Int, size: Float, onClick: () -> Unit): TextView = makeBaseKey(
         label,
@@ -1570,18 +1634,26 @@ class KeyboardImeService : InputMethodService() {
                 }
             }
             "مسافة" -> editable.insert(cursor, " ")
-            "↵" -> {
-                if (editable.count { it == '\n' } < 1) {
-                    editable.insert(cursor, "\n")
-                }
-            }
+            "↵" -> editable.insert(cursor, "\n")
             else -> {
                 editable.insert(cursor, key)
                 consumeShiftIfNeeded()
             }
         }
         repairBuffer = editable.toString()
+        scrollRepairCursorIntoView(edit)
         scheduleSuggestionRefresh()
+    }
+
+    private fun scrollRepairCursorIntoView(edit: EditText) {
+        edit.post {
+            val layout = edit.layout ?: return@post
+            val textLength = edit.text?.length ?: 0
+            val cursor = edit.selectionStart.coerceIn(0, textLength)
+            val currentLine = layout.getLineForOffset(cursor)
+            val firstVisibleLine = (currentLine - 1).coerceAtLeast(0)
+            edit.scrollTo(edit.scrollX, layout.getLineTop(firstVisibleLine))
+        }
     }
 
     private fun deletePreviousGrapheme(editable: Editable, cursor: Int) {
@@ -1678,6 +1750,7 @@ class KeyboardImeService : InputMethodService() {
         val nextCursor = (replaceStart + replacement.length).coerceAtMost(editable.length)
         edit.setSelection(nextCursor)
         repairBuffer = editable.toString()
+        scrollRepairCursorIntoView(edit)
     }
 
     private fun isDictionarySeparator(char: Char): Boolean {
@@ -1735,6 +1808,7 @@ class KeyboardImeService : InputMethodService() {
             repairBuffer = text
             repairEditText?.setText(text)
             repairEditText?.setSelection(repairEditText?.text?.length ?: 0)
+            repairEditText?.let(::scrollRepairCursorIntoView)
             scheduleSuggestionRefresh(0L)
         }
     }
@@ -1907,13 +1981,15 @@ class KeyboardImeService : InputMethodService() {
                 color == KeyboardColors.actionKey ||
                 color == KeyboardColors.enterKey
             cornerRadius = maxOf(radius, if (keyLike) dp(11) else radius).toFloat()
-            when (color) {
-                KeyboardColors.key -> setStroke(dp(1), KeyboardColors.keyStroke)
-                KeyboardColors.keyPressed -> setStroke(dp(1), KeyboardColors.repairStroke)
-                KeyboardColors.iconKey,
-                KeyboardColors.specialKey,
-                KeyboardColors.actionKey -> setStroke(dp(1), KeyboardColors.specialStroke)
-                KeyboardColors.enterKey -> setStroke(dp(1), KeyboardColors.enterStroke)
+            if (currentKeyBordersEnabled()) {
+                when (color) {
+                    KeyboardColors.key -> setStroke(dp(1), KeyboardColors.keyStroke)
+                    KeyboardColors.keyPressed -> setStroke(dp(1), KeyboardColors.repairStroke)
+                    KeyboardColors.iconKey,
+                    KeyboardColors.specialKey,
+                    KeyboardColors.actionKey -> setStroke(dp(1), KeyboardColors.specialStroke)
+                    KeyboardColors.enterKey -> setStroke(dp(1), KeyboardColors.enterStroke)
+                }
             }
         }
     }

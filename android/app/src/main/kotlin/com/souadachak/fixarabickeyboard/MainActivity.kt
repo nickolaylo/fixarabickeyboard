@@ -24,7 +24,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "getNumberRowMode" -> {
                     result.success(
-                        getSharedPreferences(KEYBOARD_UI_PREFS, Context.MODE_PRIVATE)
+                        keyboardPreferences()
                             .getString(NUMBER_ROW_MODE_KEY, NUMBER_ROW_PORTRAIT_ONLY)
                             ?: NUMBER_ROW_PORTRAIT_ONLY
                     )
@@ -38,9 +38,63 @@ class MainActivity : FlutterActivity() {
                             null
                         )
                     } else {
-                        getSharedPreferences(KEYBOARD_UI_PREFS, Context.MODE_PRIVATE)
+                        keyboardPreferences()
                             .edit()
                             .putString(NUMBER_ROW_MODE_KEY, mode)
+                            .apply()
+                        result.success(true)
+                    }
+                }
+                "getKeyboardAppearance" -> {
+                    val preferences = keyboardPreferences()
+                    result.success(
+                        mapOf(
+                            "keyboardHeightPercent" to preferences.getInt(
+                                KEYBOARD_HEIGHT_PERCENT_KEY,
+                                DEFAULT_KEYBOARD_HEIGHT_PERCENT
+                            ),
+                            "letterSizePercent" to preferences.getInt(
+                                LETTER_SIZE_PERCENT_KEY,
+                                DEFAULT_LETTER_SIZE_PERCENT
+                            ),
+                            "bottomSpacingDp" to preferences.getInt(
+                                BOTTOM_SPACING_DP_KEY,
+                                DEFAULT_BOTTOM_SPACING_DP
+                            ),
+                            "keyBordersEnabled" to preferences.getBoolean(
+                                KEY_BORDERS_ENABLED_KEY,
+                                true
+                            )
+                        )
+                    )
+                }
+                "setKeyboardAppearance" -> {
+                    val keyboardHeightPercent = call.argument<Int>("keyboardHeightPercent")
+                    val letterSizePercent = call.argument<Int>("letterSizePercent")
+                    val bottomSpacingDp = call.argument<Int>("bottomSpacingDp")
+                    val keyBordersEnabled = call.argument<Boolean>("keyBordersEnabled")
+
+                    val valid = keyboardHeightPercent != null &&
+                        keyboardHeightPercent in MIN_KEYBOARD_HEIGHT_PERCENT..MAX_KEYBOARD_HEIGHT_PERCENT &&
+                        letterSizePercent != null &&
+                        letterSizePercent in MIN_LETTER_SIZE_PERCENT..MAX_LETTER_SIZE_PERCENT &&
+                        bottomSpacingDp != null &&
+                        bottomSpacingDp in MIN_BOTTOM_SPACING_DP..MAX_BOTTOM_SPACING_DP &&
+                        keyBordersEnabled != null
+
+                    if (!valid) {
+                        result.error(
+                            "invalid_keyboard_appearance",
+                            "Unsupported keyboard appearance values",
+                            null
+                        )
+                    } else {
+                        keyboardPreferences()
+                            .edit()
+                            .putInt(KEYBOARD_HEIGHT_PERCENT_KEY, keyboardHeightPercent!!)
+                            .putInt(LETTER_SIZE_PERCENT_KEY, letterSizePercent!!)
+                            .putInt(BOTTOM_SPACING_DP_KEY, bottomSpacingDp!!)
+                            .putBoolean(KEY_BORDERS_ENABLED_KEY, keyBordersEnabled!!)
                             .apply()
                         result.success(true)
                     }
@@ -49,6 +103,9 @@ class MainActivity : FlutterActivity() {
             }
         }
     }
+
+    private fun keyboardPreferences() =
+        getSharedPreferences(KEYBOARD_UI_PREFS, Context.MODE_PRIVATE)
 
     private fun openInputMethodSettings() {
         startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
@@ -71,5 +128,19 @@ class MainActivity : FlutterActivity() {
             NUMBER_ROW_PORTRAIT_ONLY,
             NUMBER_ROW_HIDDEN
         )
+
+        private const val KEYBOARD_HEIGHT_PERCENT_KEY = "keyboard_height_percent"
+        private const val LETTER_SIZE_PERCENT_KEY = "letter_size_percent"
+        private const val BOTTOM_SPACING_DP_KEY = "bottom_spacing_dp"
+        private const val KEY_BORDERS_ENABLED_KEY = "key_borders_enabled"
+        private const val DEFAULT_KEYBOARD_HEIGHT_PERCENT = 100
+        private const val DEFAULT_LETTER_SIZE_PERCENT = 100
+        private const val DEFAULT_BOTTOM_SPACING_DP = 0
+        private const val MIN_KEYBOARD_HEIGHT_PERCENT = 85
+        private const val MAX_KEYBOARD_HEIGHT_PERCENT = 115
+        private const val MIN_LETTER_SIZE_PERCENT = 85
+        private const val MAX_LETTER_SIZE_PERCENT = 120
+        private const val MIN_BOTTOM_SPACING_DP = 0
+        private const val MAX_BOTTOM_SPACING_DP = 24
     }
 }

@@ -21,12 +21,15 @@ void main() {
     expect(find.text('Typing'), findsOneWidget);
 
     await tester.scrollUntilVisible(
-      find.text('Keyboard appearance'),
+      find.text('Keyboard height'),
       300,
       scrollable: find.byType(Scrollable).last,
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Keyboard appearance'), findsOneWidget);
+    expect(find.text('Keyboard height'), findsOneWidget);
+    expect(find.text('Letter size'), findsOneWidget);
+    expect(find.text('Bottom spacing'), findsOneWidget);
+    expect(find.text('Key borders'), findsOneWidget);
   });
 }
