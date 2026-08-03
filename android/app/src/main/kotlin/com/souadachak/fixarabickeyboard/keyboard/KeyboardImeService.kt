@@ -132,7 +132,8 @@ class KeyboardImeService : InputMethodService() {
 
         val keyboardStack = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(6), dp(8), dp(6))
+            val verticalPadding = dp(if (isLandscapeKeyboard()) 3 else 4)
+            setPadding(dp(8), verticalPadding, dp(8), verticalPadding)
             setBackgroundColor(KeyboardColors.background)
             clipChildren = false
             clipToPadding = false
@@ -542,20 +543,20 @@ class KeyboardImeService : InputMethodService() {
     private fun currentKeyAreaHeightDp(): Int {
         val showNumberRow = shouldShowNumberRow()
         return when {
-            isLandscapeKeyboard() && showNumberRow -> 226
-            isLandscapeKeyboard() -> 190
-            showNumberRow -> 264
-            else -> 215
+            isLandscapeKeyboard() && showNumberRow -> 196
+            isLandscapeKeyboard() -> 160
+            showNumberRow -> 218
+            else -> 178
         }
     }
 
-    private fun numberKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 38 else 44)
-    private fun letterKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 40 else 44)
-    private fun functionKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 44 else 48)
-    private fun bottomKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 46 else 52)
-    private fun rowTopPadding(): Int = dp(if (isLandscapeKeyboard()) 1 else 2)
-    private fun rowBottomPadding(): Int = dp(if (isLandscapeKeyboard()) 2 else 3)
-    private fun bottomRowTopPadding(): Int = dp(if (isLandscapeKeyboard()) 2 else 4)
+    private fun numberKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 34 else 38)
+    private fun letterKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 36 else 40)
+    private fun functionKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 38 else 42)
+    private fun bottomKeyHeight(): Int = dp(if (isLandscapeKeyboard()) 42 else 44)
+    private fun rowTopPadding(): Int = dp(if (isLandscapeKeyboard()) 0 else 1)
+    private fun rowBottomPadding(): Int = dp(1)
+    private fun bottomRowTopPadding(): Int = dp(1)
 
     private fun makeKeyboardKeyArea(): LinearLayout {
         return LinearLayout(this).apply {
@@ -626,6 +627,12 @@ class KeyboardImeService : InputMethodService() {
                     }
                 )
             }
+                    addView(
+                makeBackspaceKey(),
+                LinearLayout.LayoutParams(0, dp(36), 1f).apply {
+                    setMargins(dp(3), dp(1), dp(3), dp(1))
+                }
+            )
         }
 
         val grid = LinearLayout(this).apply {
