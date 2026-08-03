@@ -1,0 +1,34 @@
+name: Temporary Apply Patch 33
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/patch-33-cold-start-dictionary-quality'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Patch 33 branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/patch-33-cold-start-dictionary-quality
+          fetch-depth: 0
+
+      - name: Apply Patch 33
+        run: python tools/apply_patch33_cold_start_dictionary.py
+
+      - name: Remove temporary transformer
+        run: rm tools/apply_patch33_cold_start_dictionary.py
+
+      - name: Commit Patch 33
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Patch 33: improve cold-start dictionary quality"
+          git push origin HEAD:agent/patch-33-cold-start-dictionary-quality
