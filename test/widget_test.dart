@@ -31,5 +31,6 @@ void main() {
     expect(find.text('Letter size'), findsOneWidget);
     expect(find.text('Bottom spacing'), findsOneWidget);
     expect(find.text('Key borders'), findsOneWidget);
+    expect(find.byType(Slider), findsNWidgets(3));
   });
 }
