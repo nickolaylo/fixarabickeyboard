@@ -1,0 +1,190 @@
+                        mapOf(
+                            "keyboardHeightPercent" to preferences.getInt(
+                                KEYBOARD_HEIGHT_PERCENT_KEY,
+                                DEFAULT_KEYBOARD_HEIGHT_PERCENT
+                            ),
+                            "letterSizePercent" to preferences.getInt(
+                                LETTER_SIZE_PERCENT_KEY,
+                                DEFAULT_LETTER_SIZE_PERCENT
+                            ),
+                            "bottomSpacingDp" to preferences.getInt(
+                                BOTTOM_SPACING_DP_KEY,
+                                DEFAULT_BOTTOM_SPACING_DP
+                            ),
+                            "keyBordersEnabled" to preferences.getBoolean(
+                                KEY_BORDERS_ENABLED_KEY,
+                                true
+                            )
+                        )
+                    )
+                }
+                "setKeyboardAppearance" -> {
+                    val keyboardHeightPercent = call.argument<Int>("keyboardHeightPercent")
+                    val letterSizePercent = call.argument<Int>("letterSizePercent")
+                    val bottomSpacingDp = call.argument<Int>("bottomSpacingDp")
+                    val keyBordersEnabled = call.argument<Boolean>("keyBordersEnabled")
+
+                    val valid = keyboardHeightPercent != null &&
+                        keyboardHeightPercent in MIN_KEYBOARD_HEIGHT_PERCENT..MAX_KEYBOARD_HEIGHT_PERCENT &&
+                        letterSizePercent != null &&
+                        letterSizePercent in MIN_LETTER_SIZE_PERCENT..MAX_LETTER_SIZE_PERCENT &&
+                        bottomSpacingDp != null &&
+                        bottomSpacingDp in MIN_BOTTOM_SPACING_DP..MAX_BOTTOM_SPACING_DP &&
+                        keyBordersEnabled != null
+
+                    if (!valid) {
+                        result.error(
+                            "invalid_keyboard_appearance",
+                            "Unsupported keyboard appearance values",
+                            null
+                        )
+                    } else {
+                        keyboardPreferences()
+                            .edit()
+                            .putInt(KEYBOARD_HEIGHT_PERCENT_KEY, keyboardHeightPercent!!)
+                            .putInt(LETTER_SIZE_PERCENT_KEY, letterSizePercent!!)
+                            .putInt(BOTTOM_SPACING_DP_KEY, bottomSpacingDp!!)
+                            .putBoolean(KEY_BORDERS_ENABLED_KEY, keyBordersEnabled!!)
+                            .apply()
+                        result.success(true)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun keyboardPreferences() =
+        getSharedPreferences(KEYBOARD_UI_PREFS, Context.MODE_PRIVATE)
+
+    private fun openInputMethodSettings() {
+        startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+    }
+
+    private fun showInputMethodPicker() {
+        val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        inputMethodManager.showInputMethodPicker()
+    }
+
+    companion object {
+        private const val CHANNEL = "fix_arabic_keyboard/input_methods"
+        private const val KEYBOARD_UI_PREFS = "keyboard_ui_state"
+        private const val NUMBER_ROW_MODE_KEY = "number_row_mode"
+        private const val NUMBER_ROW_ALWAYS = "always"
+        private const val NUMBER_ROW_PORTRAIT_ONLY = "portrait_only"
+        private const val NUMBER_ROW_HIDDEN = "hidden"
+        private val NUMBER_ROW_MODES = setOf(
+            NUMBER_ROW_ALWAYS,
+            NUMBER_ROW_PORTRAIT_ONLY,
+            NUMBER_ROW_HIDDEN
+        )
+
+        private const val KEYBOARD_HEIGHT_PERCENT_KEY = "keyboard_height_percent"
+        private const val LETTER_SIZE_PERCENT_KEY = "letter_size_percent"
+        private const val BOTTOM_SPACING_DP_KEY = "bottom_spacing_dp"
+        private const val KEY_BORDERS_ENABLED_KEY = "key_borders_enabled"
+        private const val DEFAULT_KEYBOARD_HEIGHT_PERCENT = 100
+        private const val DEFAULT_LETTER_SIZE_PERCENT = 100
+        private const val DEFAULT_BOTTOM_SPACING_DP = 0
+        private const val MIN_KEYBOARD_HEIGHT_PERCENT = 85
+        private const val MAX_KEYBOARD_HEIGHT_PERCENT = 115
+        private const val MIN_LETTER_SIZE_PERCENT = 85
+        private const val MAX_LETTER_SIZE_PERCENT = 120
+        private const val MIN_BOTTOM_SPACING_DP = 0
+        private const val MAX_BOTTOM_SPACING_DP = 24
+    }
+}
+'''
+write('android/app/src/main/kotlin/com/souadachak/fixarabickeyboard/MainActivity.kt', main_activity)
+
+strings_path = 'lib/core/localization/app_strings.dart'
+strings = read(strings_path)
+strings = replace_once(
+    strings,
+    r'''  String get numberRowHidden => pick(
+        en: 'Hidden',
+        ar: 'مخفي',
+        fr: 'Masquée',
+      );
+  String get appearanceSection => pick(en: 'Appearance', ar: 'المظهر', fr: 'Apparence');
+''',
+    r'''  String get numberRowHidden => pick(
+        en: 'Hidden',
+        ar: 'مخفي',
+        fr: 'Masquée',
+      );
+  String get appearanceSection => pick(en: 'Appearance', ar: 'المظهر', fr: 'Apparence');
+  String get keyboardHeightSetting => pick(
+        en: 'Keyboard height',
+        ar: 'ارتفاع لوحة المفاتيح',
+        fr: 'Hauteur du clavier',
+      );
+  String get keyboardHeightSettingBody => pick(
+        en: 'Adjust the key area while keeping the toolbar stable.',
+        ar: 'اضبط ارتفاع منطقة المفاتيح مع بقاء شريط الأدوات ثابتًا.',
+        fr: 'Ajustez la zone des touches sans déplacer la barre d’outils.',
+      );
+  String get letterSizeSetting => pick(
+        en: 'Letter size',
+        ar: 'حجم الحروف',
+        fr: 'Taille des lettres',
+      );
+  String get letterSizeSettingBody => pick(
+        en: 'Change the size of letters, numbers and symbols on the main keys.',
+        ar: 'غيّر حجم الحروف والأرقام والرموز على المفاتيح الرئيسية.',
+        fr: 'Modifiez la taille des lettres, chiffres et symboles des touches principales.',
+      );
+  String get bottomSpacingSetting => pick(
+        en: 'Bottom spacing',
+        ar: 'المسافة السفلية',
+        fr: 'Espace inférieur',
+      );
+  String get bottomSpacingSettingBody => pick(
+        en: 'Add comfortable space below the bottom key row.',
+        ar: 'أضف مساحة مريحة أسفل الصف الأخير من المفاتيح.',
+        fr: 'Ajoutez un espace confortable sous la dernière rangée.',
+      );
+  String get keyBordersSetting => pick(
+        en: 'Key borders',
+        ar: 'حدود المفاتيح',
+        fr: 'Bordures des touches',
+      );
+  String get keyBordersSettingBody => pick(
+        en: 'Show or hide the thin outline around keyboard keys.',
+        ar: 'أظهر أو أخفِ الحد الرفيع حول مفاتيح اللوحة.',
+        fr: 'Affichez ou masquez le contour fin des touches.',
+      );
+''',
+    'add appearance strings',
+)
+write(strings_path, strings)
+
+ime_path = 'android/app/src/main/kotlin/com/souadachak/fixarabickeyboard/keyboard/KeyboardImeService.kt'
+ime = read(ime_path)
+ime = replace_once(
+    ime,
+    'import java.text.BreakIterator\n',
+    'import java.text.BreakIterator\nimport kotlin.math.roundToInt\n',
+    'add roundToInt import',
+)
+ime = replace_once(
+    ime,
+    r'''    private var appliedNumberRowMode: String? = null
+    private var appliedOrientation: Int = Configuration.ORIENTATION_UNDEFINED
+''',
+    r'''    private var appliedNumberRowMode: String? = null
+    private var appliedKeyboardHeightPercent: Int? = null
+    private var appliedLetterSizePercent: Int? = null
+    private var appliedBottomSpacingDp: Int? = null
+    private var appliedKeyBordersEnabled: Boolean? = null
+    private var appliedOrientation: Int = Configuration.ORIENTATION_UNDEFINED
+''',
+    'add applied appearance state',
+)
+ime = replace_once(
+    ime,
+    r'''        const val NUMBER_ROW_HIDDEN = "hidden"
+        const val RECENT_EMOJIS_KEY = "recent_emojis"
+''',
+    r'''        const val NUMBER_ROW_HIDDEN = "hidden"
+        const val KEYBOARD_HEIGHT_PERCENT_KEY = "keyboard_height_percent"
