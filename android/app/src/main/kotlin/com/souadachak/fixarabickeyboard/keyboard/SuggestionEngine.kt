@@ -70,12 +70,18 @@ class SuggestionEngine(context: Context) {
             }
 
         if (currentToken.isEmpty()) {
-            return arrangeSuggestions(
-                learned = learned,
-                dictionaryWords = language.defaultWords,
-                language = language,
-                allowDefaultFallbacks = true
-            )
+            // A completed word with no learned continuation must not fall back to
+            // the same generic greetings after every space. Keep only a genuinely
+            // learned next-word candidate; otherwise the toolbar is shown.
+            return learned?.let { candidate ->
+                listOf(
+                    SuggestionItem(
+                        displayText = candidate.word,
+                        commitText = candidate.word,
+                        learnedContextWords = candidate.contextWords
+                    )
+                )
+            }.orEmpty()
         }
 
         return arrangeSuggestions(
