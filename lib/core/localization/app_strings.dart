@@ -188,6 +188,31 @@ class AppStrings {
       );
 
   String get typingSection => pick(en: 'Typing', ar: 'الكتابة', fr: 'Saisie');
+  String get numberRowSetting => pick(
+        en: 'Number row',
+        ar: 'صف الأرقام',
+        fr: 'Rangée de chiffres',
+      );
+  String get numberRowSettingBody => pick(
+        en: 'Choose when the number row appears above the letters.',
+        ar: 'اختر متى يظهر صف الأرقام فوق الحروف.',
+        fr: 'Choisissez quand la rangée de chiffres apparaît au-dessus des lettres.',
+      );
+  String get numberRowAlways => pick(
+        en: 'Always',
+        ar: 'دائمًا',
+        fr: 'Toujours',
+      );
+  String get numberRowPortraitOnly => pick(
+        en: 'Portrait only',
+        ar: 'في الوضع العمودي فقط',
+        fr: 'En mode portrait uniquement',
+      );
+  String get numberRowHidden => pick(
+        en: 'Hidden',
+        ar: 'مخفي',
+        fr: 'Masquée',
+      );
   String get appearanceSection => pick(en: 'Appearance', ar: 'المظهر', fr: 'Apparence');
   String get accessibilitySection => pick(en: 'Comfort and accessibility', ar: 'الراحة وإمكانية الوصول', fr: 'Confort et accessibilité');
   String get correctionSetting => pick(
