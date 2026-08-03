@@ -482,6 +482,21 @@ class KeyboardImeService : InputMethodService() {
 
     private fun LinearLayout.addDictionaryContentToSmartRow(suggestions: List<SuggestionItem>) {
         val visibleSuggestions = suggestions.take(3)
+        val missingSlots = (3 - visibleSuggestions.size).coerceAtLeast(0)
+
+        fun addEmptySlot() {
+            addView(
+                View(this@KeyboardImeService),
+                LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                    setMargins(dp(2), dp(1), dp(2), dp(1))
+                }
+            )
+        }
+
+        if (activeDictionaryLanguage() == DictionaryLanguage.ARABIC) {
+            repeat(missingSlots) { addEmptySlot() }
+        }
+
         visibleSuggestions.forEach { suggestion ->
             val onLongClick = suggestion.learnedContextWords?.let {
                 { forgetLearnedSuggestion(suggestion) }
@@ -492,11 +507,14 @@ class KeyboardImeService : InputMethodService() {
                     onClick = { commitSuggestion(suggestion.commitText) },
                     onLongClick = onLongClick
                 ),
-                LinearLayout.LayoutParams(0, dp(38), 1f).apply { setMargins(dp(2), dp(1), dp(2), dp(1)) }
+                LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                    setMargins(dp(2), dp(1), dp(2), dp(1))
+                }
             )
         }
-        repeat((3 - visibleSuggestions.size).coerceAtLeast(0)) {
-            addView(View(this@KeyboardImeService), LinearLayout.LayoutParams(0, dp(38), 1f).apply { setMargins(dp(2), dp(1), dp(2), dp(1)) })
+
+        if (activeDictionaryLanguage() != DictionaryLanguage.ARABIC) {
+            repeat(missingSlots) { addEmptySlot() }
         }
     }
 

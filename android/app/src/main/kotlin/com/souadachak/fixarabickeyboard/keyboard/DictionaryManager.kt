@@ -109,6 +109,7 @@ class DictionaryManager(context: Context) {
     private val commonTopSuggestionIndexes =
         mutableMapOf<DictionaryLanguage, Map<String, List<DictionaryEntry>>?>()
     private val commonBuckets = mutableMapOf<DictionaryLanguage, IndexedBucket?>()
+    private val coldStartPools = mutableMapOf<DictionaryLanguage, List<String>>()
 
     private val bucketCache = object : LinkedHashMap<String, IndexedBucket>(4, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, IndexedBucket>?): Boolean {
@@ -184,6 +185,67 @@ class DictionaryManager(context: Context) {
             if (result.size >= limit) break
         }
         return result
+    }
+
+    fun coldStartWords(
+        language: DictionaryLanguage,
+        contextWords: List<String>,
+        limit: Int = 8
+    ): List<String> {
+        if (limit <= 0 || contextWords.isEmpty()) return emptyList()
+        val pool = coldStartPoolFor(language)
+        if (pool.isEmpty()) return emptyList()
+
+        val recentKeys = contextWords
+            .takeLast(3)
+            .mapTo(HashSet()) { language.normalize(it) }
+        val contextKey = contextWords
+            .takeLast(2)
+            .joinToString(" ") { language.normalize(it) }
+        val positiveHash = contextKey.hashCode().toLong() and 0x7FFFFFFFL
+        val offset = (positiveHash % pool.size.toLong()).toInt()
+
+        val result = ArrayList<String>(limit)
+        var step = 0
+        while (step < pool.size && result.size < limit) {
+            val word = pool[(offset + step) % pool.size]
+            if (language.normalize(word) !in recentKeys) result.add(word)
+            step += 1
+        }
+        return result
+    }
+
+    @Synchronized
+    private fun coldStartPoolFor(language: DictionaryLanguage): List<String> {
+        coldStartPools[language]?.let { return it }
+
+        val entries = when (language) {
+            DictionaryLanguage.ARABIC ->
+                commonTopSuggestionIndexFor(language)?.values?.flatten().orEmpty() +
+                    topSuggestionIndexFor(language)?.values?.flatten().orEmpty()
+            DictionaryLanguage.ENGLISH,
+            DictionaryLanguage.FRENCH ->
+                topSuggestionIndexFor(language)?.values?.flatten().orEmpty()
+        }
+
+        val seen = HashSet<String>()
+        val pool = entries
+            .sortedWith(
+                compareBy<DictionaryEntry>(
+                    { if (it.isCommonWord) 0 else 1 },
+                    { it.sourceRank },
+                    { if (it.isGeneratedDerivative) 1 else 0 },
+                    { language.normalize(it.word) }
+                )
+            )
+            .mapNotNull { entry ->
+                val key = language.normalize(entry.word)
+                entry.word.takeIf { key.isNotEmpty() && seen.add(key) }
+            }
+            .take(COLD_START_POOL_LIMIT)
+
+        coldStartPools[language] = pool
+        return pool
     }
 
     private fun searchVariants(
@@ -679,6 +741,7 @@ class DictionaryManager(context: Context) {
         private const val MAX_BUCKET_KEY_LENGTH = 2
         private const val PREFIX_SCAN_LIMIT = 512
         private const val COMMON_PREFIX_SCAN_LIMIT = 256
+        private const val COLD_START_POOL_LIMIT = 36
         private const val MIN_STRIPPED_PREFIX_LENGTH = 2
         private val ARABIC_SEARCH_PREFIXES = listOf(
             "وال", "فال", "بال", "كال", "لل", "ال",
