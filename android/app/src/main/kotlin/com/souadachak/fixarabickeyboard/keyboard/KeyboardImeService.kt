@@ -14,12 +14,14 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
 import android.view.animation.DecelerateInterpolator
 import android.widget.EditText
@@ -194,6 +196,27 @@ class KeyboardImeService : InputMethodService() {
                 Gravity.BOTTOM
             )
         )
+
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val verticalPadding = dp(if (isLandscapeKeyboard()) 3 else 4)
+            val userBottomPadding = dp(currentBottomSpacingDp())
+            val systemBottomPadding = navigationBottomInset(insets)
+            val resolvedBottomPadding =
+                verticalPadding + userBottomPadding + systemBottomPadding
+
+            if (keyboardStack.paddingBottom != resolvedBottomPadding) {
+                keyboardStack.setPadding(
+                    dp(8),
+                    verticalPadding,
+                    dp(8),
+                    resolvedBottomPadding
+                )
+                keyboardStack.requestLayout()
+            }
+            insets
+        }
+        root.post { root.requestApplyInsets() }
+
         updateSuggestions()
         return root
     }
@@ -599,6 +622,28 @@ class KeyboardImeService : InputMethodService() {
     private fun currentBottomSpacingDp(): Int {
         return prefs.getInt(BOTTOM_SPACING_DP_KEY, DEFAULT_BOTTOM_SPACING_DP)
             .coerceIn(MIN_BOTTOM_SPACING_DP, MAX_BOTTOM_SPACING_DP)
+    }
+
+    private fun navigationBottomInset(insets: WindowInsets): Int {
+        val bottomInset = when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                val navigationBars = insets.getInsets(
+                    WindowInsets.Type.navigationBars()
+                ).bottom
+                val mandatoryGestures = insets.getInsets(
+                    WindowInsets.Type.mandatorySystemGestures()
+                ).bottom
+                maxOf(navigationBars, mandatoryGestures)
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
+                maxOf(
+                    insets.systemWindowInsetBottom,
+                    insets.systemGestureInsets.bottom
+                )
+            }
+            else -> insets.systemWindowInsetBottom
+        }
+        return bottomInset.coerceAtLeast(0)
     }
 
     private fun currentKeyBordersEnabled(): Boolean {
