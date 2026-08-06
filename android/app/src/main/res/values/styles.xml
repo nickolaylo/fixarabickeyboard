@@ -15,4 +15,15 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+
+    <!-- Native IME window theme. Android keeps ownership of the navigation bar
+         and its hide/switch controls; only its colors are aligned with the keyboard. -->
+    <style name="KeyboardImeTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F6F2F9</item>
+        <item name="android:navigationBarColor">#F6F2F9</item>
+        <item name="android:navigationBarDividerColor">#F6F2F9</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowNavigationBarContrastEnforced">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
 </resources>
