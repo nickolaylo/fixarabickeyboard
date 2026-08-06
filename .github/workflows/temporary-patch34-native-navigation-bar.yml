@@ -20,10 +20,14 @@ jobs:
           fetch-depth: 0
 
       - name: Apply native Android navigation bar correction
-        run: python tools/apply_patch34_native_navigation_bar.py
+        run: |
+          if [ -f tools/apply_patch34_native_navigation_bar.py ]; then
+            python tools/apply_patch34_native_navigation_bar.py
+            rm tools/apply_patch34_native_navigation_bar.py
+          fi
 
-      - name: Remove temporary transformer
-        run: rm tools/apply_patch34_native_navigation_bar.py
+      - name: Remove temporary branch workflow
+        run: rm -f .github/workflows/temporary-patch34-native-navigation-branch.yml
 
       - uses: actions/setup-java@v4
         with:
@@ -46,5 +50,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Style the native Android navigation bar"
-          git push origin HEAD:agent/patch-34-keyboard-personalization-and-compose-viewport
+          if ! git diff --cached --quiet; then
+            git commit -m "Style the native Android navigation bar"
+            git push origin HEAD:agent/patch-34-keyboard-personalization-and-compose-viewport
+          fi
