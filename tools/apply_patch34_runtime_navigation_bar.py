@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Patch 34 runtime native-navigation correction.
 IME = Path('android/app/src/main/kotlin/com/souadachak/fixarabickeyboard/keyboard/KeyboardImeService.kt')
 JOURNAL = Path('PROJECT_JOURNAL.md')
 
