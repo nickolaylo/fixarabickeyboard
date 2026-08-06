@@ -46,6 +46,3 @@ journal = replace_once(
     'document native navigation bar policy',
 )
 JOURNAL_PATH.write_text(journal, encoding='utf-8', newline='\n')
-
-# Trigger the temporary validation workflow after it is present on main.
-# Reopened PR event will apply and validate this transformer.
