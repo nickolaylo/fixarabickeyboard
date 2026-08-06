@@ -1,50 +1,13 @@
 name: Temporary Patch 34 Native Navigation Branch
 
 on:
-  push:
-    branches:
-      - agent/patch-34-keyboard-personalization-and-compose-viewport
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-and-validate:
+  placeholder:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Apply correction when transformer exists
-        run: |
-          if [ -f tools/apply_patch34_native_navigation_bar.py ]; then
-            python tools/apply_patch34_native_navigation_bar.py
-            rm tools/apply_patch34_native_navigation_bar.py
-          fi
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.44.6'
-          channel: stable
-          cache: true
-
-      - run: flutter pub get
-      - run: flutter analyze
-      - run: flutter test
-      - run: flutter build apk --debug
-
-      - name: Commit validated correction when needed
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "Style the native Android navigation bar"
-            git push origin HEAD:agent/patch-34-keyboard-personalization-and-compose-viewport
-          fi
+      - run: echo "Temporary workflow disabled after handoff to the PR workflow."
