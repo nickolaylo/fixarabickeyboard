@@ -1,0 +1,63 @@
+name: Temporary Validate Native Navigation Theme
+
+on:
+  pull_request:
+    types: [reopened]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  validate:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/patch-34-keyboard-personalization-and-compose-viewport'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/patch-34-keyboard-personalization-and-compose-viewport
+          fetch-depth: 0
+
+      - name: Document native Android ownership
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('PROJECT_JOURNAL.md')
+          text = path.read_text(encoding='utf-8')
+          anchor = '- تُحجز مساحة تنقل Android السفلية تلقائيًا تحت المفاتيح، ثم تضاف فوقها المسافة الاختيارية التي يحددها المستخدم؛ فلا تتداخل أيقونة إخفاء اللوحة أو تبديل طريقة الإدخال أو شريط الإيماءات مع الصف السفلي على الهاتف والتابلت.\n'
+          addition = '- يبقى شريط التنقل السفلي وأزرار الإخفاء وتبديل طريقة الإدخال عناصر أصلية يملكها Android وحده؛ لا تنشئ اللوحة شريطًا أو أزرارًا بديلة، وإنما يضبط ثيم نافذة خدمة الإدخال لون الشريط الأصلي ليتطابق مع خلفية اللوحة مع رموز داكنة وإلغاء التعتيم الأسود الإجباري في الإصدارات المدعومة.\n'
+          if addition not in text:
+              if anchor not in text:
+                  raise SystemExit('Patch 34 navigation anchor not found')
+              text = text.replace(anchor, anchor + addition, 1)
+              path.write_text(text, encoding='utf-8', newline='\n')
+          PY
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.6'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build apk --debug
+
+      - name: Remove temporary branch files
+        run: |
+          rm -f tools/native-navigation-validation-trigger.txt
+          rm -f .github/workflows/temporary-validate-native-navigation-theme.yml
+
+      - name: Commit validated result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Validate native Android navigation bar theme"
+          git push origin HEAD:agent/patch-34-keyboard-personalization-and-compose-viewport
