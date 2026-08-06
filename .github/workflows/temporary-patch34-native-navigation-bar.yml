@@ -1,0 +1,50 @@
+name: Temporary Patch 34 Native Navigation Bar
+
+on:
+  pull_request:
+    types: [synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  apply-and-validate:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/patch-34-keyboard-personalization-and-compose-viewport'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Patch 34 branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/patch-34-keyboard-personalization-and-compose-viewport
+          fetch-depth: 0
+
+      - name: Apply native Android navigation bar correction
+        run: python tools/apply_patch34_native_navigation_bar.py
+
+      - name: Remove temporary transformer
+        run: rm tools/apply_patch34_native_navigation_bar.py
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.6'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build apk --debug
+
+      - name: Commit validated correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Style the native Android navigation bar"
+          git push origin HEAD:agent/patch-34-keyboard-personalization-and-compose-viewport
