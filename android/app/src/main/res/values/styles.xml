@@ -23,7 +23,7 @@
         <item name="android:navigationBarColor">#F6F2F9</item>
         <item name="android:navigationBarDividerColor">#F6F2F9</item>
         <item name="android:windowLightNavigationBar">true</item>
-        <item name="android:windowNavigationBarContrastEnforced">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
 </resources>
