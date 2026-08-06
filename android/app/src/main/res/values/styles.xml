@@ -16,9 +16,9 @@
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
 
-    <!-- Native IME window theme. Android keeps ownership of the navigation bar
-         and its hide/switch controls; only its colors are aligned with the keyboard. -->
-    <style name="KeyboardImeTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+    <!-- Native IME theme: Android still owns the navigation area and its controls.
+         We only align the original system bar colors with the keyboard surface. -->
+    <style name="KeyboardImeTheme" parent="@android:style/Theme.InputMethod">
         <item name="android:windowBackground">#F6F2F9</item>
         <item name="android:navigationBarColor">#F6F2F9</item>
         <item name="android:navigationBarDividerColor">#F6F2F9</item>
