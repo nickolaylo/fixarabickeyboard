@@ -15,4 +15,16 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+
+    <!-- Native IME theme: Android still owns the navigation area and its controls.
+         On modern Android the system bar is transparent so the IME window background
+         is visible underneath it; no custom navigation view or system buttons are drawn. -->
+    <style name="KeyboardImeTheme" parent="@android:style/Theme.InputMethod">
+        <item name="android:windowBackground">#F6F2F9</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarDividerColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
 </resources>

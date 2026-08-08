@@ -214,6 +214,46 @@ class AppStrings {
         fr: 'Masquée',
       );
   String get appearanceSection => pick(en: 'Appearance', ar: 'المظهر', fr: 'Apparence');
+  String get keyboardHeightSetting => pick(
+        en: 'Keyboard height',
+        ar: 'ارتفاع لوحة المفاتيح',
+        fr: 'Hauteur du clavier',
+      );
+  String get keyboardHeightSettingBody => pick(
+        en: 'Adjust the key area while keeping the toolbar stable.',
+        ar: 'اضبط ارتفاع منطقة المفاتيح مع بقاء شريط الأدوات ثابتًا.',
+        fr: 'Ajustez la zone des touches sans déplacer la barre d’outils.',
+      );
+  String get letterSizeSetting => pick(
+        en: 'Letter size',
+        ar: 'حجم الحروف',
+        fr: 'Taille des lettres',
+      );
+  String get letterSizeSettingBody => pick(
+        en: 'Change the size of letters, numbers and symbols on the main keys.',
+        ar: 'غيّر حجم الحروف والأرقام والرموز على المفاتيح الرئيسية.',
+        fr: 'Modifiez la taille des lettres, chiffres et symboles des touches principales.',
+      );
+  String get bottomSpacingSetting => pick(
+        en: 'Bottom spacing',
+        ar: 'المسافة السفلية',
+        fr: 'Espace inférieur',
+      );
+  String get bottomSpacingSettingBody => pick(
+        en: 'Add comfortable space below the bottom key row.',
+        ar: 'أضف مساحة مريحة أسفل الصف الأخير من المفاتيح.',
+        fr: 'Ajoutez un espace confortable sous la dernière rangée.',
+      );
+  String get keyBordersSetting => pick(
+        en: 'Key borders',
+        ar: 'حدود المفاتيح',
+        fr: 'Bordures des touches',
+      );
+  String get keyBordersSettingBody => pick(
+        en: 'Show or hide the thin outline around keyboard keys.',
+        ar: 'أظهر أو أخفِ الحد الرفيع حول مفاتيح اللوحة.',
+        fr: 'Affichez ou masquez le contour fin des touches.',
+      );
   String get accessibilitySection => pick(en: 'Comfort and accessibility', ar: 'الراحة وإمكانية الوصول', fr: 'Confort et accessibilité');
   String get correctionSetting => pick(
         en: 'Arabic repair',
